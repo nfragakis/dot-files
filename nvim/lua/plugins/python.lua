@@ -4,6 +4,10 @@ return {
     "neovim/nvim-lspconfig",
     opts = {
       servers = {
+        -- Disable ruff LSP server
+        ruff = {
+          enabled = false,
+        },
         pyright = {
           settings = {
             python = {
