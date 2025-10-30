@@ -11,7 +11,7 @@ return {
         pyright = {
           settings = {
             python = {
-              pythonPath = vim.fn.expand("~/default/bin/python"),
+              pythonPath = vim.fn.expand("~/.local/share/mise/installs/python/3.13.9/bin/python"),
               analysis = {
                 autoSearchPaths = true,
                 useLibraryCodeForTypes = true,
@@ -21,6 +21,8 @@ return {
                   reportReturnType = "none",
                   reportArgumentType = "none",
                   reportOptionalSubscript = "none",
+                  reportOptionalMemberAccess = "none",
+                  reportAttributeAccessIssue = "none",
                 },
               },
             },
