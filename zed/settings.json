@@ -1,0 +1,49 @@
+{
+  "multi_cursor_modifier": "cmd_or_ctrl",
+  "base_keymap": "Cursor",
+  "vim_mode": true,
+  "ui_font_size": 16,
+  "buffer_font_size": 13,
+  "theme": {
+    "mode": "system",
+    "light": "Ayu Light",
+    "dark": "Gruvbox Dark Hard"
+  },
+  "relative_line_numbers": false,
+  "scrolloff": 4,
+  "cursor_blink": false,
+  "show_wrap_guides": true,
+  "wrap_guides": [80, 120],
+  "preferred_line_length": 80,
+  "soft_wrap": "none",
+  "tab_size": 2,
+  "hard_tabs": false,
+  "show_whitespaces": "none",
+  "ensure_final_newline_on_save": true,
+  "format_on_save": "off",
+  "remove_trailing_whitespace_on_save": true,
+  "autosave": "on_focus_change",
+  "terminal": {
+    "alternate_scroll": "on",
+    "blinking": "off",
+    "copy_on_select": false,
+    "dock": "bottom",
+    "default_height": 400,
+    "working_directory": "current_project_directory"
+  },
+  "project_panel": {
+    "dock": "left",
+    "default_width": 300
+  },
+  "git": {
+    "git_gutter": "tracked_files",
+    "inline_blame": {
+      "enabled": true
+    }
+  },
+  "languages": {
+    "Python": {
+      "format_on_save": "off"
+    }
+  }
+}
