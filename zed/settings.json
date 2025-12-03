@@ -1,14 +1,6 @@
 {
   "icon_theme": "Material Icon Theme",
-  "context_servers": {
-    "mcp-server-firecrawl": {
-      "source": "extension",
-      "enabled": true,
-      "settings": {
-        "firecrawl_api_key": "fc-d400a6d25d754045aee493b06a47a0aa"
-      }
-    }
-  },
+  "context_servers": {},
   "multi_cursor_modifier": "cmd_or_ctrl",
   "base_keymap": "Cursor",
   "vim_mode": true,
@@ -23,7 +15,10 @@
   "scrolloff": 4,
   "cursor_blink": false,
   "show_wrap_guides": true,
-  "wrap_guides": [80, 120],
+  "wrap_guides": [
+    80,
+    120
+  ],
   "preferred_line_length": 80,
   "soft_wrap": "none",
   "tab_size": 2,
