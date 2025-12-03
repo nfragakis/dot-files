@@ -66,7 +66,19 @@
   {
     "context": "ProjectPanel && not_editing",
     "bindings": {
-      "space e": "workspace::ToggleLeftDock"
+      "space e": "workspace::ToggleLeftDock",
+      "ctrl-h": ["workspace::ActivatePaneInDirection", "Left"],
+      "ctrl-l": ["workspace::ActivatePaneInDirection", "Right"],
+      "ctrl-k": ["workspace::ActivatePaneInDirection", "Up"]
+    }
+  },
+  {
+    "context": "AssistantPanel",
+    "bindings": {
+      "ctrl-h": ["workspace::ActivatePaneInDirection", "Left"],
+      "ctrl-l": ["workspace::ActivatePaneInDirection", "Right"],
+      "ctrl-k": ["workspace::ActivatePaneInDirection", "Up"],
+      "ctrl-j": ["workspace::ActivatePaneInDirection", "Down"]
     }
   },
   {
@@ -78,7 +90,11 @@
   {
     "context": "Terminal",
     "bindings": {
-      "ctrl-j": "workspace::ToggleBottomDock"
+      "ctrl-j": "workspace::ToggleBottomDock",
+      "ctrl-t": "workspace::NewTerminal",
+      "ctrl-h": ["workspace::ActivatePaneInDirection", "Left"],
+      "ctrl-l": ["workspace::ActivatePaneInDirection", "Right"],
+      "ctrl-k": ["workspace::ActivatePaneInDirection", "Up"]
     }
   },
   {
@@ -100,7 +116,10 @@
     "context": "Editor && vim_mode == normal && !VimWaiting && !menu",
     "bindings": {
       "space g g": "editor::ToggleGitBlame",
-      "space g b": "editor::ToggleGitBlame"
+      "space g b": "editor::ToggleGitBlame",
+      "space g d": "editor::ToggleHunkDiff",
+      "space g l": "editor::OpenExcerpts",
+      "space g s": "project_panel::ToggleFocus"
     }
   },
   {
@@ -114,6 +133,142 @@
     "context": "Editor && vim_mode == normal && !VimWaiting && !menu",
     "bindings": {
       "n": "search::SelectNextMatch"
+    }
+  },
+  {
+    "context": "Editor && vim_mode == normal && !VimWaiting && !menu",
+    "bindings": {
+      "space w w": "workspace::ToggleLeftDock",
+      "ctrl-b": "workspace::ToggleLeftDock"
+    }
+  },
+  {
+    "context": "ProjectPanel && not_editing",
+    "bindings": {
+      "space w w": "workspace::ToggleLeftDock",
+      "ctrl-b": "workspace::ToggleLeftDock"
+    }
+  },
+  {
+    "context": "Terminal",
+    "bindings": {
+      "ctrl-b": "workspace::ToggleLeftDock"
+    }
+  },
+  {
+    "context": "Workspace",
+    "bindings": {
+      "ctrl-b": "workspace::ToggleLeftDock"
+    }
+  },
+  {
+    "context": "Editor && vim_mode == normal && !VimWaiting && !menu",
+    "bindings": {
+      "ctrl-h": ["workspace::ActivatePaneInDirection", "Left"],
+      "ctrl-l": ["workspace::ActivatePaneInDirection", "Right"],
+      "ctrl-k": ["workspace::ActivatePaneInDirection", "Up"]
+    }
+  },
+  {
+    "context": "Editor && vim_mode == normal && !VimWaiting && !menu",
+    "bindings": {
+      "]d": "editor::GoToDiagnostic",
+      "[d": "editor::GoToPrevDiagnostic",
+      "]e": "editor::GoToDiagnostic",
+      "[e": "editor::GoToPrevDiagnostic",
+      "]h": "editor::GoToHunk",
+      "[h": "editor::GoToPrevHunk"
+    }
+  },
+  {
+    "context": "Editor && vim_mode == normal && !VimWaiting && !menu",
+    "bindings": {
+      "space f t": "terminal_panel::ToggleFocus",
+      "space f T": "terminal_panel::ToggleFocus"
+    }
+  },
+  {
+    "context": "Editor && vim_mode == normal && !VimWaiting && !menu",
+    "bindings": {
+      "space tab tab": "pane::SplitRight",
+      "space tab d": "pane::CloseActiveItem",
+      "space tab ]": "pane::ActivateNextItem",
+      "space tab [": "pane::ActivatePrevItem"
+    }
+  },
+  {
+    "context": "Editor && vim_mode == normal && !VimWaiting && !menu",
+    "bindings": {
+      "space s g": "pane::DeploySearch",
+      "space s w": "editor::FindAllReferences",
+      "space w m": "workspace::ToggleCenteredLayout",
+      "K": "editor::Hover",
+      "g d": "editor::GoToDefinition",
+      "g r": "editor::FindAllReferences",
+      "g I": "editor::GoToImplementation",
+      "g y": "editor::GoToTypeDefinition"
+    }
+  },
+  {
+    "context": "Editor && vim_mode == normal && !VimWaiting && !menu",
+    "bindings": {
+      "space space": "file_finder::Toggle",
+      "space ,": "tab_switcher::Toggle",
+      "space f p": "projects::OpenRecent",
+      "space 1": ["pane::ActivateItem", 0],
+      "space 2": ["pane::ActivateItem", 1],
+      "space 3": ["pane::ActivateItem", 2],
+      "space 4": ["pane::ActivateItem", 3],
+      "space 5": ["pane::ActivateItem", 4],
+      "space 6": ["pane::ActivateItem", 5],
+      "space 7": ["pane::ActivateItem", 6],
+      "space 8": ["pane::ActivateItem", 7],
+      "space 9": ["pane::ActivateItem", 8],
+      "space 0": "pane::ActivateLastItem"
+    }
+  },
+  {
+    "context": "Editor && vim_mode == normal && !VimWaiting && !menu",
+    "bindings": {
+      "]b": "pane::ActivateNextItem",
+      "[b": "pane::ActivatePrevItem",
+      "space b n": "workspace::NewFile",
+      "space b q": "pane::CloseInactiveItems"
+    }
+  },
+  {
+    "context": "Editor && vim_mode == normal && !VimWaiting && !menu",
+    "bindings": {
+      "space s b": "buffer_search::Deploy",
+      "space s s": "outline::Toggle",
+      "space s d": "diagnostics::Deploy"
+    }
+  },
+  {
+    "context": "Editor && vim_mode == normal && !VimWaiting && !menu",
+    "bindings": {
+      "space w s": "pane::SplitDown",
+      "space w v": "pane::SplitRight",
+      "space w c": "pane::CloseAllItems"
+    }
+  },
+  {
+    "context": "Editor && vim_mode == normal && !VimWaiting && !menu",
+    "bindings": {
+      "]c": "editor::GoToHunk"
+    }
+  },
+  {
+    "context": "Editor && vim_mode == visual && !VimWaiting && !menu",
+    "bindings": {
+      "shift-j": "editor::MoveLineDown",
+      "shift-k": "editor::MoveLineUp"
+    }
+  },
+  {
+    "context": "Editor && vim_mode == normal && !VimWaiting && !menu",
+    "bindings": {
+      "space c a": "editor::ToggleCodeActions"
     }
   }
 ]
