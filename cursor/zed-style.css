@@ -1,0 +1,105 @@
+/* Zed-style CSS for Cursor/VS Code on Linux */
+
+/* Breadcrumbs styling */
+.monaco-breadcrumbs {
+  background-color: #141414 !important;
+  border-bottom: 1px solid #333333 !important;
+  height: 40px !important;
+  min-height: 40px !important;
+  padding-left: 12px !important;
+  display: flex !important;
+  align-items: center !important;
+}
+
+.breadcrumbs-control {
+  background-color: #141414 !important;
+  height: 40px !important;
+}
+
+.monaco-breadcrumb-item {
+  font-family: 'JetBrainsMonoNL Nerd Font', 'JetBrains Mono NL', monospace !important;
+  font-size: 13px !important;
+  color: #666666 !important;
+  line-height: 40px !important;
+  letter-spacing: 0.2px !important;
+}
+
+.monaco-breadcrumb-item:hover,
+.monaco-breadcrumb-item.active {
+  color: #999999 !important;
+}
+
+/* Breadcrumb separator - use / instead of chevron */
+.monaco-breadcrumbs .codicon-chevron-right::before,
+.monaco-breadcrumbs .codicon-breadcrumb-separator::before {
+  content: '/' !important;
+  font-family: 'JetBrainsMonoNL Nerd Font', monospace !important;
+  font-size: 13px !important;
+  opacity: 0.3 !important;
+  margin: 0 4px !important;
+}
+
+.monaco-breadcrumbs-container {
+  border: none !important;
+  box-shadow: none !important;
+}
+
+/* Sidebar styling */
+.sidebar {
+  font-family: "JetBrainsMonoNL Nerd Font", monospace !important;
+}
+
+/* Quick input (command palette) */
+.quick-input-widget {
+  font-family: "JetBrainsMonoNL Nerd Font", monospace !important;
+}
+
+/* Tab labels */
+.tab-label {
+  font-family: "JetBrainsMonoNL Nerd Font", monospace !important;
+}
+
+/* Fix cursor scaling on Wayland/HiDPI */
+.cursor-layer .cursor {
+  width: 2px !important;
+}
+
+/* Reduce editor line number gutter width */
+.monaco-editor .margin-view-overlays .line-numbers {
+  padding-right: 8px !important;
+}
+
+/* Cleaner scrollbar when visible */
+.monaco-scrollable-element > .scrollbar > .slider {
+  border-radius: 4px !important;
+  background: rgba(255, 255, 255, 0.1) !important;
+}
+
+.monaco-scrollable-element > .scrollbar > .slider:hover {
+  background: rgba(255, 255, 255, 0.2) !important;
+}
+
+/* Activity bar icons */
+.monaco-workbench .activitybar > .content :not(.monaco-menu) > .monaco-action-bar .action-item .action-label {
+  font-size: 20px !important;
+}
+
+/* Panel/terminal title */
+.title.tabs.show-file-icons {
+  font-family: "JetBrainsMonoNL Nerd Font", monospace !important;
+}
+
+/* Status bar */
+.monaco-workbench .part.statusbar {
+  font-family: "JetBrainsMonoNL Nerd Font", monospace !important;
+  font-size: 12px !important;
+}
+
+/* Explorer file tree */
+.monaco-workbench .part.sidebar .title-label h2 {
+  font-family: "JetBrainsMonoNL Nerd Font", monospace !important;
+}
+
+.monaco-icon-label-container {
+  font-family: "JetBrainsMonoNL Nerd Font", monospace !important;
+}
