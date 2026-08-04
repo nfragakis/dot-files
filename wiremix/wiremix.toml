@@ -1,0 +1,9 @@
+# overwrites default wiremix configuration
+# defaults: https://github.com/tsowell/wiremix/blob/main/wiremix.toml
+
+# Peak monitoring opens every audio endpoint and can switch PipeWire's graph
+# clock while an AirPlay stream is active, causing the HomePod to drop out.
+peaks = "off"
+
+[char_sets.default]
+default_device = "⮞"
