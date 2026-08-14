@@ -6,7 +6,7 @@ import qs.Ui
 
 BarWidget {
   id: root
-  moduleName: "omarchy.workspaces"
+  moduleName: "nfragakis.workspaces"
 
   function workspaceById(id) {
     var values = Hyprland.workspaces.values
@@ -18,7 +18,7 @@ BarWidget {
   }
 
   function workspaceIds() {
-    var ids = [1, 2, 3, 4, 5]
+    var ids = [1, 2, 3, 4, 5, 6, 7, 8]
     var values = Hyprland.workspaces.values
 
     for (var i = 0; i < values.length; i++) {
@@ -30,12 +30,29 @@ BarWidget {
     return ids
   }
 
-  function workspaceLabel(id, workspace) {
-    var fallback = id === 10 ? "0" : String(id)
-    if (root.vertical || workspace === null) return fallback
+  function displayNumber(id) {
+    return id === 10 ? "0" : String(id)
+  }
 
-    var name = String(workspace.name || "")
-    return name.length > 0 ? name : fallback
+  // Ghostty exposes tmux status in titles as:
+  //   hostname ❐ SESSION_NAME ● N window_name
+  // Read it directly from Quickshell's live Hyprland model so labels update
+  // immediately without a polling process renaming the workspace itself.
+  function tmuxSession(workspace) {
+    if (workspace === null) return ""
+
+    var toplevels = workspace.toplevels.values
+    for (var i = 0; i < toplevels.length; i++) {
+      var title = String(toplevels[i].title || "")
+      var match = title.match(/❐\s+([^●]+?)\s+●/)
+      if (match === null) continue
+
+      return match[1]
+        .replace(/^\s+|\s+$/g, "")
+        .replace(/-[0-9]+$/, "")
+    }
+
+    return ""
   }
 
   function focusWorkspace(id) {
@@ -67,38 +84,107 @@ BarWidget {
         required property int modelData
 
         readonly property var workspace: root.workspaceById(modelData)
-        readonly property bool occupied: workspace !== null && workspace.toplevels.values.length > 0
+        readonly property int windowCount: workspace !== null ? workspace.toplevels.values.length : 0
+        readonly property bool occupied: windowCount > 0
         readonly property bool focused: Hyprland.focusedWorkspace !== null && Hyprland.focusedWorkspace.id === modelData
-        readonly property string workspaceLabel: root.workspaceLabel(modelData, workspace)
+        readonly property bool urgent: workspace !== null && workspace.urgent
+        readonly property string numberText: root.displayNumber(modelData)
+        readonly property string sessionName: root.tmuxSession(workspace)
+        readonly property string sessionText: sessionName.substring(0, 6)
 
         bar: root.bar
-        text: workspaceLabel
-        fontSize: Style.font.subtitle
-        active: focused
-        useActiveColor: true
-        opacity: focused ? 1 : (occupied ? 0.95 : 0.45)
+        text: ""
+        labelVisible: false
+        keepSpace: true
+        hasVisualContent: true
         horizontalMargin: 6
         verticalPadding: 6
         fixedWidth: root.vertical ? root.barSize : root.workspaceSlotWidth
         fixedHeight: root.barSize
-        tooltipText: workspace !== null ? String(workspace.name || "") : ""
+        tooltipText: sessionName !== ""
+          ? "Workspace " + numberText + " — tmux: " + sessionName
+          : (occupied ? "Workspace " + numberText + " — " + windowCount + " window" + (windowCount === 1 ? "" : "s") : "Workspace " + numberText + " — empty")
 
         Rectangle {
+          id: workspaceSurface
           anchors.fill: parent
           anchors.margins: Style.space(2)
           z: -1
           radius: Style.space(3)
           color: workspaceButton.focused
-            ? Util.alpha(workspaceButton.activeColor, 0.16)
-            : Util.alpha(workspaceButton.foreground, workspaceButton.occupied ? 0.18 : 0.02)
-          border.width: workspaceButton.focused ? Style.space(2) : Style.space(1)
+            ? Util.alpha(Color.accent, 0.11)
+            : Util.alpha(workspaceButton.foreground, workspaceButton.occupied ? 0.16 : 0.01)
+          border.width: Style.space(1)
           border.color: workspaceButton.focused
-            ? workspaceButton.activeColor
-            : Util.alpha(workspaceButton.foreground, workspaceButton.occupied ? 0.55 : 0.16)
+            ? Util.alpha(Color.accent, 0.85)
+            : Util.alpha(workspaceButton.foreground, workspaceButton.occupied ? 0.46 : 0.13)
 
           Behavior on color {
             ColorAnimation { duration: 160 }
           }
+        }
+
+        RowLayout {
+          anchors.centerIn: parent
+          spacing: Style.space(2)
+
+          Text {
+            Layout.alignment: Qt.AlignVCenter
+            text: workspaceButton.numberText
+            color: workspaceButton.focused
+              ? Util.alpha(Color.accent, 0.78)
+              : Util.alpha(workspaceButton.foreground, workspaceButton.occupied ? 0.68 : 0.36)
+            font.family: workspaceButton.fontFamily
+            font.pixelSize: Style.font.bodySmall
+            font.bold: workspaceButton.focused
+            renderType: Text.NativeRendering
+          }
+
+          Rectangle {
+            visible: workspaceButton.sessionText !== "" && !root.vertical
+            Layout.alignment: Qt.AlignVCenter
+            Layout.preferredWidth: Style.space(1)
+            Layout.preferredHeight: Style.font.body
+            color: workspaceButton.focused
+              ? Util.alpha(Color.accent, 0.48)
+              : Util.alpha(workspaceButton.foreground, 0.28)
+          }
+
+          Text {
+            visible: workspaceButton.sessionText !== "" && !root.vertical
+            Layout.alignment: Qt.AlignVCenter
+            text: workspaceButton.sessionText
+            color: workspaceButton.focused ? Color.accent : workspaceButton.foreground
+            font.family: workspaceButton.fontFamily
+            font.pixelSize: Style.font.subtitle
+            font.bold: workspaceButton.focused
+            renderType: Text.NativeRendering
+          }
+        }
+
+        Rectangle {
+          visible: workspaceButton.focused
+          anchors.left: parent.left
+          anchors.right: parent.right
+          anchors.bottom: parent.bottom
+          anchors.leftMargin: Style.space(8)
+          anchors.rightMargin: Style.space(8)
+          anchors.bottomMargin: Style.space(3)
+          height: Style.space(2)
+          radius: height / 2
+          color: Color.accent
+        }
+
+        Rectangle {
+          visible: workspaceButton.urgent
+          anchors.top: parent.top
+          anchors.right: parent.right
+          anchors.topMargin: Style.space(5)
+          anchors.rightMargin: Style.space(5)
+          width: Style.space(4)
+          height: width
+          radius: width / 2
+          color: Color.urgent
         }
 
         onPressed: function() { root.focusWorkspace(modelData) }
