@@ -188,7 +188,7 @@ BarWidget {
             text: workspaceButton.sessionName
             color: workspaceButton.focused ? Color.accent : workspaceButton.foreground
             font.family: workspaceButton.fontFamily
-            font.pixelSize: Style.font.subtitle
+            font.pixelSize: Style.font.body
             font.bold: workspaceButton.focused
             renderType: Text.NativeRendering
             elide: Text.ElideRight
