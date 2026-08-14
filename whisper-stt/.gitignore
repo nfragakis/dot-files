@@ -1,0 +1,21 @@
+# Downloaded model weights (hundreds of MB to multiple GB).
+/models/
+
+# Cloned whisper.cpp source and locally compiled binaries.
+/runtime/
+
+# Locally unpacked build dependencies and SDK headers.
+/.local-tools/
+
+# Machine-specific state, recordings, and credentials.
+/audio_device
+/groq_api_key
+/*.wav
+/*.pid
+
+# Python/editor artifacts.
+/.venv/
+/__pycache__/
+*.py[cod]
+*~
+
