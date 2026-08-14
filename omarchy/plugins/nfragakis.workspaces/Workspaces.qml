@@ -18,15 +18,24 @@ BarWidget {
   }
 
   function workspaceIds() {
-    var ids = [1, 2, 3, 4, 5, 6, 7, 8]
+    var highestVisibleId = root.defaultWorkspaceCount
     var values = Hyprland.workspaces.values
 
     for (var i = 0; i < values.length; i++) {
       var id = values[i].id
-      if (id > 0 && id <= 10 && ids.indexOf(id) === -1) ids.push(id)
+      if (id <= 0) continue
+
+      // Keep any existing workspace reachable, and reveal one additional
+      // destination after the highest occupied workspace.
+      highestVisibleId = Math.max(highestVisibleId, id)
+      if (values[i].toplevels.values.length > 0)
+        highestVisibleId = Math.max(highestVisibleId, id + 1)
     }
 
-    ids.sort(function(left, right) { return left - right })
+    var ids = []
+    for (var workspaceId = 1; workspaceId <= highestVisibleId; workspaceId++)
+      ids.push(workspaceId)
+
     return ids
   }
 
@@ -60,6 +69,7 @@ BarWidget {
     root.bar.run("hyprctl dispatch " + Util.shellQuote("hl.dsp.focus({ workspace = \"" + id + "\" })"))
   }
 
+  readonly property int defaultWorkspaceCount: 5
   readonly property real trailingGap: root.vertical ? 0 : Style.spaceReal(1.5)
   readonly property real workspaceSlotWidth: Style.space(64)
   readonly property real compactWorkspaceSlotWidth: Style.space(36)
