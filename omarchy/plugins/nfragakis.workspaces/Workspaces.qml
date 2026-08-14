@@ -62,6 +62,7 @@ BarWidget {
 
   readonly property real trailingGap: root.vertical ? 0 : Style.spaceReal(1.5)
   readonly property real workspaceSlotWidth: Style.space(64)
+  readonly property real compactWorkspaceSlotWidth: Style.space(36)
   readonly property real workspaceGap: Style.space(5)
 
   implicitWidth: grid.implicitWidth + trailingGap
@@ -90,7 +91,6 @@ BarWidget {
         readonly property bool urgent: workspace !== null && workspace.urgent
         readonly property string numberText: root.displayNumber(modelData)
         readonly property string sessionName: root.tmuxSession(workspace)
-        readonly property string sessionText: sessionName.substring(0, 6)
 
         bar: root.bar
         text: ""
@@ -99,7 +99,9 @@ BarWidget {
         hasVisualContent: true
         horizontalMargin: 6
         verticalPadding: 6
-        fixedWidth: root.vertical ? root.barSize : root.workspaceSlotWidth
+        fixedWidth: root.vertical
+          ? root.barSize
+          : (sessionName !== "" ? root.workspaceSlotWidth : root.compactWorkspaceSlotWidth)
         fixedHeight: root.barSize
         tooltipText: sessionName !== ""
           ? "Workspace " + numberText + " — tmux: " + sessionName
@@ -124,12 +126,17 @@ BarWidget {
           }
         }
 
-        RowLayout {
-          anchors.centerIn: parent
-          spacing: Style.space(2)
+        Item {
+          id: numberSlot
+          anchors.top: parent.top
+          anchors.bottom: parent.bottom
+          x: workspaceButton.sessionName !== "" && !root.vertical
+            ? Style.space(5)
+            : Math.round((parent.width - width) / 2)
+          width: Style.space(10)
 
           Text {
-            Layout.alignment: Qt.AlignVCenter
+            anchors.fill: parent
             text: workspaceButton.numberText
             color: workspaceButton.focused
               ? Util.alpha(Color.accent, 0.78)
@@ -138,27 +145,47 @@ BarWidget {
             font.pixelSize: Style.font.bodySmall
             font.bold: workspaceButton.focused
             renderType: Text.NativeRendering
+            horizontalAlignment: Text.AlignHCenter
+            verticalAlignment: Text.AlignVCenter
           }
+        }
 
-          Rectangle {
-            visible: workspaceButton.sessionText !== "" && !root.vertical
-            Layout.alignment: Qt.AlignVCenter
-            Layout.preferredWidth: Style.space(1)
-            Layout.preferredHeight: Style.font.body
-            color: workspaceButton.focused
-              ? Util.alpha(Color.accent, 0.48)
-              : Util.alpha(workspaceButton.foreground, 0.28)
-          }
+        Rectangle {
+          id: sessionDivider
+          visible: workspaceButton.sessionName !== "" && !root.vertical
+          anchors.left: numberSlot.right
+          anchors.leftMargin: Style.space(2)
+          anchors.verticalCenter: parent.verticalCenter
+          width: Style.space(1)
+          height: Style.font.body
+          color: workspaceButton.focused
+            ? Util.alpha(Color.accent, 0.48)
+            : Util.alpha(workspaceButton.foreground, 0.28)
+        }
+
+        Item {
+          visible: workspaceButton.sessionName !== "" && !root.vertical
+          anchors.left: sessionDivider.right
+          anchors.right: parent.right
+          anchors.top: parent.top
+          anchors.bottom: parent.bottom
+          anchors.leftMargin: Style.space(2)
+          anchors.rightMargin: Style.space(4)
+          clip: true
 
           Text {
-            visible: workspaceButton.sessionText !== "" && !root.vertical
-            Layout.alignment: Qt.AlignVCenter
-            text: workspaceButton.sessionText
+            anchors.fill: parent
+            text: workspaceButton.sessionName
             color: workspaceButton.focused ? Color.accent : workspaceButton.foreground
             font.family: workspaceButton.fontFamily
             font.pixelSize: Style.font.subtitle
             font.bold: workspaceButton.focused
             renderType: Text.NativeRendering
+            elide: Text.ElideRight
+            maximumLineCount: 1
+            wrapMode: Text.NoWrap
+            horizontalAlignment: Text.AlignLeft
+            verticalAlignment: Text.AlignVCenter
           }
         }
 
