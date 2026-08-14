@@ -1,89 +1,58 @@
 #!/bin/bash
 
-# Workspace Session Namer for Waybar
-# Listens for Hyprland events and renames workspaces based on tmux session names
-# from terminal window titles.
+# Workspace Session Namer for the Omarchy shell (and legacy Waybar).
+# Renames workspaces based on tmux session names in terminal window titles.
 
-# Function to extract tmux session name from window title
-# Terminal titles follow pattern: hostname ❐ SESSION_NAME ● N window_name
-get_session_from_title() {
-    local title="$1"
-    # Extract text between ❐ and ●
-    if [[ "$title" =~ ❐[[:space:]]([^●]+)[[:space:]]● ]]; then
-        echo "${BASH_REMATCH[1]}" | xargs  # trim whitespace
-    else
-        echo ""
-    fi
+# Quote a string for a double-quoted Lua literal. Workspace names originate in
+# terminal titles, so they must not be interpolated into hyprctl eval as code.
+lua_quote() {
+    local value="$1"
+    value="${value//\\/\\\\}"
+    value="${value//\"/\\\"}"
+    value="${value//$'\n'/\\n}"
+    value="${value//$'\r'/\\r}"
+    printf '"%s"' "$value"
 }
 
-# Function to update workspace name based on its windows
-update_workspace_name() {
-    local workspace_id="$1"
-    local max_len=6  # Max characters for session name
-
-    # Get all windows in this workspace
-    local windows
-    windows=$(hyprctl clients -j | jq -r ".[] | select(.workspace.id == $workspace_id) | .title" 2>/dev/null)
-
-    local session_name=""
-
-    # Look for a tmux session name in any window title
-    while IFS= read -r title; do
-        [[ -z "$title" ]] && continue
-        session_name=$(get_session_from_title "$title")
-        if [[ -n "$session_name" ]]; then
-            # Remove trailing numbers/dashes (e.g., "nimbus-0" -> "nimbus")
-            session_name=$(echo "$session_name" | sed 's/-[0-9]*$//')
-            # Truncate to max length
-            session_name="${session_name:0:$max_len}"
-            break
-        fi
-    done <<< "$windows"
-
-    # Display number (workspace 10 shows as 0)
-    local display_num
-    if [[ "$workspace_id" -eq 10 ]]; then
-        display_num="0"
-    else
-        display_num="$workspace_id"
-    fi
-
-    # Format: "N:session" or just "N" if no session
-    local new_name
-    if [[ -n "$session_name" ]]; then
-        new_name="${display_num}:${session_name}"
-    else
-        new_name="$display_num"
-    fi
-
-    # Rename the workspace
-    hyprctl dispatch renameworkspace "$workspace_id" "$new_name" >/dev/null 2>&1
-}
-
-# Function to update all workspaces
 update_all_workspaces() {
-    local workspaces
-    workspaces=$(hyprctl workspaces -j | jq -r '.[].id' 2>/dev/null)
+    local clients_json workspaces_json
+    clients_json=$(hyprctl clients -j 2>/dev/null) || return
+    workspaces_json=$(hyprctl workspaces -j 2>/dev/null) || return
 
-    while IFS= read -r ws_id; do
-        [[ -z "$ws_id" ]] && continue
-        update_workspace_name "$ws_id"
-    done <<< "$workspaces"
+    # Build every desired name in one jq pass, then ask Hyprland to rename only
+    # workspaces whose names are stale. Session suffixes such as "-1" are
+    # removed and the remaining name is capped at six characters.
+    while IFS=$'\t' read -r workspace_id current_name desired_name; do
+        [[ -z "$workspace_id" || "$current_name" == "$desired_name" ]] && continue
+
+        local quoted_name
+        quoted_name=$(lua_quote "$desired_name")
+        hyprctl eval \
+            "hl.dispatch(hl.dsp.workspace.rename({ workspace = $workspace_id, name = $quoted_name }))" \
+            >/dev/null 2>&1
+    done < <(jq -rn --argjson clients "$clients_json" --argjson workspaces "$workspaces_json" '
+        $workspaces[]
+        | select(.id > 0)
+        | . as $workspace
+        | (if .id == 10 then "0" else (.id | tostring) end) as $display
+        | ([
+            $clients[]
+            | select(.workspace.id == $workspace.id)
+            | .title
+            | try capture("❐[[:space:]]+(?<session>[^●]+)[[:space:]]+●").session catch empty
+            | sub("[[:space:]]+$"; "")
+            | sub("-[0-9]+$"; "")
+            | .[0:6]
+          ] | (first // "")) as $session
+        | (if $session == "" then $display else ($display + ":" + $session) end) as $desired
+        | [$workspace.id, $workspace.name, $desired]
+        | @tsv
+    ')
 }
 
-# Initial update of all workspaces
-update_all_workspaces
-
-# Listen for Hyprland events
-nc -U "$XDG_RUNTIME_DIR/hypr/$HYPRLAND_INSTANCE_SIGNATURE/.socket2.sock" | while IFS= read -r event; do
-    case "$event" in
-        workspace\>*|focusedmon\>*)
-            # Workspace changed - update all
-            update_all_workspaces
-            ;;
-        openwindow\>*|closewindow\>*|movewindow\>*|windowtitle\>*)
-            # Window event - update all workspaces
-            update_all_workspaces
-            ;;
-    esac
+# Polling avoids silent event-socket disconnects. Since renames happen only
+# when a name changes, the steady-state loop is two reads and one jq pass.
+while true; do
+    update_all_workspaces
+    sleep 1
 done
