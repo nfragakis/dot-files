@@ -1,1 +1,1 @@
-/home/nfragakis/.config/omarchy/current/theme/neovim.lua
+/home/nfragakis/.local/state/omarchy/current/theme/neovim.lua
