@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "still",
+  "name": "Still",
+  "version": "0.1.0",
+  "author": "Nick Fragakis",
+  "license": "MIT",
+  "description": "A small breathing room for the Omarchy desktop",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Still",
+    "description": "Quick breathing and meditation sessions",
+    "category": "Wellness",
+    "allowMultiple": false,
+    "defaultSection": "right"
+  }
+}
