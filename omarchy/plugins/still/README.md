@@ -1,17 +1,14 @@
 # Still
 
-Still is a compact breathing and meditation panel for the Omarchy bar. It
-offers four intentions—Calm, Focus, Energy, and Recover—with three levels of
-paced breathing. It stores no session history or health data.
+Still is a centered breathing and meditation panel for the Omarchy bar. It
+offers five intentions—Calm, Focus, Energy, Recover, and Tradition—with three
+levels of paced breathing. It stores no session history or health data.
 
 ## Install
 
-```bash
-omarchy plugin add https://github.com/YOUR-USER/still.git --enable --yes
-```
-
-For local development, copy or link this directory to
-`~/.config/omarchy/plugins/still`, then rescan the shell plugins.
+From the root of this dot-files repository, run `./install-omarchy.sh`. The
+installer safely links the plugin and shell configuration into
+`~/.config/omarchy`, backing up conflicts before replacing them.
 
 ## Reminders
 
@@ -32,25 +29,38 @@ never open the panel or interrupt the active application.
 
 ## Protocol notes
 
-- Calm uses extended-exhale, resonance-paced, and cyclic-sigh patterns.
-- Focus uses even breathing and equal-phase box breathing.
-- Energy uses inhale-emphasized patterns. Its Hard preset is an advanced
-  power-breathing sequence: 30 rhythmic breaths, an exhale retention, and a
-  15-second recovery hold.
-- Recover uses progressively longer exhales and optional pauses.
+- Calm includes extended-exhale, coherent 5.5-breath/minute, and cyclic-sigh
+  patterns. Calm / Medium / 2 minutes is the default.
+- Focus includes even breathing, skippable-hold box breathing, and no-hold
+  alternate-nostril breathing.
+- Energy uses light, even rhythms without retention. Its copy is explicitly
+  experiential because an acute “energy” effect is not established.
+- Recover includes pursed-lip breathing, extended exhale, and one optional
+  short-hold pattern.
+- Tradition includes Bhramari humming, gentle exhale-only Ujjayi, and Sitali.
+  The panel distinguishes traditional framing from measured effects.
 
-The advanced sequence can cause light-headedness or, rarely, loss of
-consciousness. Practice seated or lying down, never driving, standing, or in
-or near water. Stop and return to normal breathing if you feel unwell. This
-plugin is a pacing tool, not medical advice.
+Pause always means “breathe normally” and resume begins again with an inhale.
+Every hold can be skipped immediately. Breathe gently rather than maximally;
+stop and return to normal breathing for dizziness, tingling, unusual
+breathlessness, pain, faintness, or panic. This plugin is a wellness pacing
+tool, not medical advice or treatment.
 
 ## Sources
 
-- Balban et al., *Cell Reports Medicine* (2023), structured five-minute
-  cyclic sighing, box breathing, and cyclic hyperventilation with retention.
-- Zaccaro et al., *Frontiers in Human Neuroscience* (2018), systematic review
-  of slow breathing below 10 breaths per minute.
-- Wim Hof Method, official basic breathing instructions and safety guidance.
+- [Lin, Tai & Fan (2014)](https://pubmed.ncbi.nlm.nih.gov/24380741/), a
+  two-minute comparison of slow-breath pacing ratios.
+- [Balban et al. (2023)](https://doi.org/10.1016/j.xcrm.2022.100895), a
+  randomized trial of five-minute daily cyclic sighing and box breathing.
+- [Mason et al. (2013)](https://pmc.ncbi.nlm.nih.gov/articles/PMC3655580/), a
+  comparison of ordinary slow breathing and Ujjayi variants.
+- [Telles et al. (2017)](https://pmc.ncbi.nlm.nih.gov/articles/PMC5755948/),
+  an alternate-nostril breathing crossover study.
+- [Haṭha Yoga Pradīpikā, chapter 2](https://en.wikisource.org/wiki/Hatha_Yoga_Pradipika/2),
+  for the traditional framing of Nadi Shodhana, Bhramari, Ujjayi, and Sitali.
+
+Detailed evidence, limitations, implementation notes, and safety sources are
+kept in [`research/`](research/).
 
 ## License
 

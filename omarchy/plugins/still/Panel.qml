@@ -10,9 +10,9 @@ Panel {
     property var anchorItem: null
     property var hostWidget: null
     readonly property var barIdentity: hostWidget || root
-    property string screen: "setup" // setup | warning | running | done
+    property string screen: "setup" // setup | running | done
     property string intent: "calm"
-    property int difficulty: 0
+    property int difficulty: 1
     property int durationIndex: 1
     property var phases: []
     property int phaseIndex: 0
@@ -26,9 +26,10 @@ Panel {
     property real orbScale: 0.18
     readonly property int durationSec: Protocols.DURATIONS[durationIndex]
     readonly property var activePreset: Protocols.preset(intent, difficulty)
-    readonly property var activePhase: phases.length ? phases[Math.min(phaseIndex, phases.length - 1)] : ["inhale", 4]
-    readonly property string phaseType: activePhase[0]
-    readonly property real phaseSeconds: activePhase[1]
+    readonly property var activePhase: phases.length ? phases[Math.min(phaseIndex, phases.length - 1)] : ({ type: "inhale", seconds: 4 })
+    readonly property string phaseType: activePhase.type
+    readonly property real phaseSeconds: activePhase.seconds
+    readonly property bool holding: Protocols.isHoldPhase(phaseType)
     readonly property int phaseRemaining: Math.max(1, Math.ceil(phaseSeconds - phaseElapsedMs / 1000))
     readonly property int sessionRemaining: Math.max(0, durationSec - Math.floor(sessionElapsedMs / 1000))
     readonly property color foreground: bar ? bar.foreground : Color.foreground
@@ -58,15 +59,8 @@ Panel {
         return false;
     }
 
-    function requestStart() {
-        if (activePreset.advanced)
-            screen = "warning";
-        else
-            startSession();
-    }
-
     function startSession() {
-        phases = Protocols.phasesFor(intent, difficulty, durationSec);
+        phases = activePreset.phases;
         phaseIndex = 0;
         pauseAccumulatedMs = 0;
         paused = false;
@@ -91,7 +85,11 @@ Panel {
         if (setting("sound", true) !== true || !bar)
             return ;
 
-        var source = type === "exhale" || type === "retain" ? "out.ogg" : "in.ogg";
+        var sound = Protocols.phaseSound(type);
+        if (sound === "none")
+            return ;
+
+        var source = sound + ".ogg";
         var base = Qt.resolvedUrl("sounds/" + source).toString().replace(/^file:\/\//, "");
         bar.run("pw-play " + shellQuote(base));
     }
@@ -103,10 +101,6 @@ Panel {
     function advancePhase() {
         phaseIndex++;
         if (phaseIndex >= phases.length) {
-            if (activePreset.power) {
-                finishSession();
-                return ;
-            }
             phaseIndex = 0;
         }
         enterPhase();
@@ -119,7 +113,7 @@ Panel {
         var now = Date.now();
         phaseElapsedMs = now - phaseStartedAt;
         sessionElapsedMs = now - sessionStartedAt - pauseAccumulatedMs;
-        if (!activePreset.power && sessionElapsedMs >= durationSec * 1000) {
+        if (sessionElapsedMs >= durationSec * 1000) {
             finishSession();
             return ;
         }
@@ -131,19 +125,29 @@ Panel {
     function togglePause() {
         if (paused) {
             var delta = Date.now() - pausedAt;
-            phaseStartedAt += delta;
             pauseAccumulatedMs += delta;
             paused = false;
+            phaseIndex = 0;
+            enterPhase();
         } else {
             pausedAt = Date.now();
             paused = true;
+            orbScale = 0.18;
         }
+    }
+
+    function primarySessionAction() {
+        if (holding && !paused)
+            advancePhase();
+        else
+            togglePause();
     }
 
     function stopSession() {
         ticker.stop();
         paused = false;
         screen = "setup";
+        orbScale = 0.18;
     }
 
     function finishSession() {
@@ -165,7 +169,7 @@ Panel {
         onTriggered: root.tick()
     }
 
-    KeyboardPanel {
+    CenteredKeyboardPanel {
         id: panel
 
         anchorItem: root.anchorItem
@@ -173,8 +177,8 @@ Panel {
         bar: root.bar
         open: root.opened
         focusTarget: keyCatcher
-        contentWidth: panel.fittedContentWidth(Style.space(390))
-        contentHeight: panel.fittedContentHeight(Style.space(540), Style.space(620))
+        contentWidth: panel.fittedContentWidth(Style.space(520))
+        contentHeight: panel.fittedContentHeight(Style.space(600), Style.space(700))
 
         PanelKeyCatcher {
             id: keyCatcher
@@ -186,11 +190,9 @@ Panel {
             }
             onActivateRequested: {
                 if (root.screen === "setup")
-                    root.requestStart();
-                else if (root.screen === "warning")
                     root.startSession();
                 else if (root.screen === "running")
-                    root.togglePause();
+                    root.primarySessionAction();
                 else
                     root.screen = "setup";
             }
@@ -233,7 +235,7 @@ Panel {
 
                 Item {
                     width: parent.width
-                    height: Style.space(292)
+                    height: Style.space(350)
 
                     Column {
                         visible: root.screen === "setup"
@@ -258,7 +260,7 @@ Panel {
                                 Rectangle {
                                     required property var modelData
 
-                                    width: (parent.width - Style.space(18)) / 4
+                                    width: (parent.width - Style.space(6) * (Protocols.INTENTIONS.length - 1)) / Protocols.INTENTIONS.length
                                     height: Style.space(38)
                                     radius: Style.cornerRadius
                                     color: root.intent === modelData.id ? Color.accent : "transparent"
@@ -289,6 +291,17 @@ Panel {
                             spacing: Style.space(3)
 
                             Text {
+                                width: parent.width
+                                text: root.activePreset.basis
+                                color: Color.accent
+                                opacity: 0.78
+                                font.family: root.fontFamily
+                                font.pixelSize: Style.font.caption
+                                font.weight: Font.Medium
+                                elide: Text.ElideRight
+                            }
+
+                            Text {
                                 text: root.activePreset.name
                                 color: root.foreground
                                 font.family: root.fontFamily
@@ -301,6 +314,26 @@ Panel {
                                 opacity: 0.5
                                 font.family: root.fontFamily
                                 font.pixelSize: Style.font.bodySmall
+                            }
+
+                            Text {
+                                width: parent.width
+                                text: root.activePreset.benefit
+                                color: root.foreground
+                                opacity: 0.68
+                                wrapMode: Text.WordWrap
+                                font.family: root.fontFamily
+                                font.pixelSize: Style.font.bodySmall
+                            }
+
+                            Text {
+                                width: parent.width
+                                text: root.activePreset.cue
+                                color: root.foreground
+                                opacity: 0.45
+                                wrapMode: Text.WordWrap
+                                font.family: root.fontFamily
+                                font.pixelSize: Style.font.caption
                             }
 
                         }
@@ -351,7 +384,6 @@ Panel {
                                     required property string modelData
                                     required property int index
 
-                                    visible: !(root.intent === "energy" && root.difficulty === 2 && index === 0)
                                     width: Style.space(92)
                                     height: Style.space(34)
                                     radius: Style.cornerRadius
@@ -376,44 +408,6 @@ Panel {
 
                             }
 
-                        }
-
-                    }
-
-                    Column {
-                        visible: root.screen === "warning"
-                        anchors.centerIn: parent
-                        width: parent.width
-                        spacing: Style.space(12)
-
-                        Text {
-                            width: parent.width
-                            text: "Power breathing"
-                            horizontalAlignment: Text.AlignHCenter
-                            color: root.foreground
-                            font.family: root.fontFamily
-                            font.pixelSize: Style.font.title
-                        }
-
-                        Text {
-                            width: parent.width
-                            wrapMode: Text.WordWrap
-                            horizontalAlignment: Text.AlignHCenter
-                            text: "Sit or lie down. Never practice while driving, standing, or in or near water. Stop if you feel unwell. Retention is never a contest."
-                            color: root.foreground
-                            opacity: 0.7
-                            font.family: root.fontFamily
-                            font.pixelSize: Style.font.body
-                        }
-
-                        Text {
-                            width: parent.width
-                            text: "Press Enter or click below to continue"
-                            horizontalAlignment: Text.AlignHCenter
-                            color: root.foreground
-                            opacity: 0.45
-                            font.family: root.fontFamily
-                            font.pixelSize: Style.font.caption
                         }
 
                     }
@@ -450,7 +444,7 @@ Panel {
 
                             Text {
                                 anchors.horizontalCenter: parent.horizontalCenter
-                                text: Protocols.phaseLabel(root.phaseType)
+                                text: Protocols.phaseLabel(root.paused ? "normal" : root.phaseType)
                                 color: root.foreground
                                 font.family: root.fontFamily
                                 font.pixelSize: Style.font.title
@@ -458,10 +452,22 @@ Panel {
 
                             Text {
                                 anchors.horizontalCenter: parent.horizontalCenter
-                                text: root.phaseRemaining
+                                text: root.paused ? "·" : root.phaseRemaining
                                 color: root.foreground
                                 font.family: root.fontFamily
                                 font.pixelSize: Style.font.displayLarge
+                            }
+
+                            Text {
+                                width: Style.space(360)
+                                anchors.horizontalCenter: parent.horizontalCenter
+                                text: root.paused ? "Resume starts again with an inhale." : root.activePreset.cue
+                                color: root.foreground
+                                opacity: 0.45
+                                wrapMode: Text.WordWrap
+                                horizontalAlignment: Text.AlignHCenter
+                                font.family: root.fontFamily
+                                font.pixelSize: Style.font.caption
                             }
 
                         }
@@ -469,7 +475,7 @@ Panel {
                         Text {
                             anchors.horizontalCenter: parent.horizontalCenter
                             anchors.bottom: parent.bottom
-                            text: root.activePreset.power ? ("round sequence · " + (root.phaseIndex + 1) + "/" + root.phases.length) : (Math.floor(root.sessionRemaining / 60) + ":" + String(root.sessionRemaining % 60).padStart(2, "0"))
+                            text: Math.floor(root.sessionRemaining / 60) + ":" + String(root.sessionRemaining % 60).padStart(2, "0")
                             color: root.foreground
                             opacity: 0.52
                             font.family: root.fontFamily
@@ -485,7 +491,7 @@ Panel {
 
                         Text {
                             anchors.horizontalCenter: parent.horizontalCenter
-                            text: "return gently"
+                            text: "breathe normally"
                             color: root.foreground
                             font.family: root.fontFamily
                             font.pixelSize: Style.font.title
@@ -493,7 +499,7 @@ Panel {
 
                         Text {
                             anchors.horizontalCenter: parent.horizontalCenter
-                            text: root.activePreset.name
+                            text: root.activePreset.name + " · session complete"
                             color: root.foreground
                             opacity: 0.45
                             font.family: root.fontFamily
@@ -512,7 +518,11 @@ Panel {
 
                     Text {
                         anchors.centerIn: parent
-                        text: root.screen === "setup" ? "Begin" : root.screen === "warning" ? "I’m seated — continue" : root.screen === "running" ? (root.paused ? "Resume" : "Pause") : "Again"
+                        text: root.screen === "setup"
+                            ? "Begin"
+                            : (root.screen === "running"
+                                ? (root.paused ? "Resume" : (root.holding ? "Skip hold · breathe normally" : "Pause · breathe normally"))
+                                : "Again")
                         color: Color.background
                         font.family: root.fontFamily
                         font.pixelSize: Style.font.body
@@ -523,11 +533,9 @@ Panel {
                         anchors.fill: parent
                         onClicked: {
                             if (root.screen === "setup")
-                                root.requestStart();
-                            else if (root.screen === "warning")
                                 root.startSession();
                             else if (root.screen === "running")
-                                root.togglePause();
+                                root.primarySessionAction();
                             else
                                 root.screen = "setup";
                         }
@@ -538,7 +546,10 @@ Panel {
                 Text {
                     width: parent.width
                     horizontalAlignment: Text.AlignHCenter
-                    text: root.screen === "setup" ? "enter to begin · esc to close" : "esc to close"
+                    text: root.screen === "setup"
+                        ? "wellness only · breathe gently · stop for dizziness, tingling, breathlessness, pain, or panic"
+                        : "esc to close"
+                    wrapMode: Text.WordWrap
                     color: root.foreground
                     opacity: 0.35
                     font.family: root.fontFamily

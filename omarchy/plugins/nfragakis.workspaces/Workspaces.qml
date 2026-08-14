@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Layouts
+import Quickshell
 import Quickshell.Hyprland
 import qs.Commons
 import qs.Ui
@@ -71,8 +72,17 @@ BarWidget {
 
   readonly property int defaultWorkspaceCount: 5
   readonly property real trailingGap: root.vertical ? 0 : Style.spaceReal(1.5)
-  readonly property real workspaceSlotWidth: Style.space(64)
-  readonly property real compactWorkspaceSlotWidth: Style.space(36)
+  readonly property var hostWindow: root.QsWindow.window
+  readonly property real screenWidth: hostWindow && hostWindow.screen ? hostWindow.screen.width : 0
+  // QScreen dimensions are logical pixels, so this responds to both monitor
+  // size and display scaling. A 5K Studio Display at 2x reports 2560px and
+  // gets room for roughly six characters; a typical laptop stays compact.
+  readonly property int sessionSlotUnits: screenWidth >= 2300
+    ? 88
+    : (screenWidth >= 1800 ? 74 : (screenWidth >= 1600 ? 64 : 56))
+  readonly property int compactSlotUnits: screenWidth >= 2300 ? 38 : 34
+  readonly property real workspaceSlotWidth: Style.space(sessionSlotUnits)
+  readonly property real compactWorkspaceSlotWidth: Style.space(compactSlotUnits)
   readonly property real workspaceGap: Style.space(5)
 
   implicitWidth: grid.implicitWidth + trailingGap

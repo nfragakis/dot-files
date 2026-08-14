@@ -2,10 +2,10 @@
   "schemaVersion": 1,
   "id": "still",
   "name": "Still",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "author": "Nick Fragakis",
   "license": "MIT",
-  "description": "A small breathing room for the Omarchy desktop",
+  "description": "Evidence-aware and traditional breathwork for the Omarchy desktop",
   "kinds": [
     "bar-widget"
   ],
