@@ -9,7 +9,7 @@ Item {
   property date selectedDate: new Date()
   property var events: []
   property var tasks: []
-  property string taskEmptyText: qsTr("No tasks due on this day")
+  property bool selectedDayIsToday: false
   property color foreground: Color.foreground
   property string fontFamily: Style.font.family
   property string statusText: ""
@@ -289,7 +289,9 @@ Item {
       Text {
         anchors.centerIn: parent
         visible: root.tasks.length === 0
-        text: root.taskEmptyText
+        text: root.selectedDayIsToday
+          ? qsTr("No tasks due today or overdue")
+          : qsTr("No tasks due on or before this day")
         color: Qt.darker(root.foreground, 1.8)
         font.family: root.fontFamily
         font.pixelSize: Style.font.caption

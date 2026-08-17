@@ -296,15 +296,14 @@ function taskDateKey(task) {
   return match ? match[1] : ""
 }
 
-function tasksForDateKey(tasks, selectedDateKey, todayDateKey) {
+function tasksForDateKey(tasks, selectedDateKey) {
   var selected = String(selectedDateKey || "")
-  var includeOverdue = selected !== "" && selected === String(todayDateKey || "")
   var rows = []
   for (var i = 0; i < (tasks || []).length; i++) {
     var due = taskDateKey(tasks[i])
     // Canonical YYYY-MM-DD keys sort chronologically as strings. taskDateKey
     // rejects every other shape before this comparison.
-    if (due === selected || (includeOverdue && due !== "" && due < selected)) rows.push(tasks[i])
+    if (due !== "" && due <= selected) rows.push(tasks[i])
   }
   return rows
 }

@@ -23,7 +23,7 @@ test("event indexing returns selected date rows", () => {
   assert.equal(Model.eventsForDateKey(index, "2026-08-17")[0].title, "One")
 })
 
-test("future day shows only tasks due on that day", () => {
+test("future day includes tasks due on or before that day", () => {
   const tasks = [
     { id: "overdue", due: "2026-08-16", content: "Past" },
     { id: "today", due: "2026-08-17T09:00:00-05:00", content: "Now" },
@@ -31,9 +31,9 @@ test("future day shows only tasks due on that day", () => {
     { id: "later", due: "2026-08-19", content: "Later" }
   ]
 
-  const visible = Model.tasksForDateKey(tasks, "2026-08-18", "2026-08-17")
+  const visible = Model.tasksForDateKey(tasks, "2026-08-18")
 
-  assert.deepEqual(visible.map(task => task.id), ["tomorrow"])
+  assert.deepEqual(visible.map(task => task.id), ["overdue", "today", "tomorrow"])
 })
 
 test("today includes overdue and today tasks but not future tasks", () => {
@@ -43,7 +43,7 @@ test("today includes overdue and today tasks but not future tasks", () => {
     { id: "tomorrow", due: "2026-08-18", content: "Next" }
   ]
 
-  const visible = Model.tasksForDateKey(tasks, "2026-08-17", "2026-08-17")
+  const visible = Model.tasksForDateKey(tasks, "2026-08-17")
 
   assert.deepEqual(visible.map(task => task.id), ["overdue", "today"])
 })
