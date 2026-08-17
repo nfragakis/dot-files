@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "nfragakis.clock",
+  "name": "Calendar Dashboard",
+  "version": "1.0.0",
+  "author": "Omarchy",
+  "description": "The Omarchy clock with account calendars, meeting links, and Todoist at a glance.",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Calendar Dashboard",
+    "description": "The Omarchy clock with account calendars, meeting links, and Todoist at a glance.",
+    "category": "Time",
+    "allowMultiple": false
+  },
+  "omarchy": {
+    "clonedFrom": "omarchy.clock"
+  }
+}

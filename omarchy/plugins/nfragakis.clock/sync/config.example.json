@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "window": {
+    "pastDays": 7,
+    "futureDays": 60
+  },
+  "providers": [
+    {
+      "type": "evolution",
+      "selectedOnly": true
+    }
+  ],
+  "todoist": {
+    "enabled": true,
+    "tokenFile": "~/.config/todoist/api_key",
+    "filter": "today | overdue",
+    "limit": 50
+  }
+}

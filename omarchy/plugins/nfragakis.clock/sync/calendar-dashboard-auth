@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+venv_python="${XDG_DATA_HOME:-$HOME/.local/share}/nfragakis-calendar-dashboard/venv/bin/python"
+
+if [[ ! -x "$venv_python" ]]; then
+  printf 'Direct-provider environment is missing. Run:\n  %s/setup --direct-deps\n' "$script_dir" >&2
+  exit 1
+fi
+
+export PYTHONPATH="$script_dir${PYTHONPATH:+:$PYTHONPATH}"
+exec "$venv_python" -m agenda_sync.auth "$@"

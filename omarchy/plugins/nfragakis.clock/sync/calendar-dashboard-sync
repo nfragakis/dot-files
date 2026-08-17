@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+venv_python="${XDG_DATA_HOME:-$HOME/.local/share}/nfragakis-calendar-dashboard/venv/bin/python"
+python_bin="/usr/bin/python3"
+
+if [[ -x "$venv_python" ]]; then
+  python_bin="$venv_python"
+fi
+
+export PYTHONPATH="$script_dir${PYTHONPATH:+:$PYTHONPATH}"
+exec "$python_bin" -m agenda_sync.cli "$@"

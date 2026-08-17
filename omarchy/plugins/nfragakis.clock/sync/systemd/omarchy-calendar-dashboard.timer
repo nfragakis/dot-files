@@ -1,0 +1,12 @@
+[Unit]
+Description=Refresh the Omarchy calendar dashboard
+
+[Timer]
+OnBootSec=90s
+OnUnitActiveSec=5min
+AccuracySec=30s
+Persistent=true
+Unit=omarchy-calendar-dashboard.service
+
+[Install]
+WantedBy=timers.target

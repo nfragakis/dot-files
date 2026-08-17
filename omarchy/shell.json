@@ -9,7 +9,7 @@
         {
           "format": "dddd HH:mm",
           "formatAlt": "d MMMM 'W'ww yyyy",
-          "id": "omarchy.clock",
+          "id": "nfragakis.clock",
           "verticalFormat": "HH\n—\nmm",
           "birthYear": 1995,
           "lifeExpectancy": 90
@@ -63,7 +63,7 @@
       ]
     },
     "position": "top",
-    "transparent": false
+    "transparent": true
   },
   "idle": {
     "lock": 300,

@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+config_home="${XDG_CONFIG_HOME:-$HOME/.config}"
+data_home="${XDG_DATA_HOME:-$HOME/.local/share}"
+state_home="${XDG_STATE_HOME:-$HOME/.local/state}"
+config_file="$config_home/omarchy/calendar-dashboard.json"
+unit_dir="$config_home/systemd/user"
+bin_dir="$HOME/.local/bin"
+venv_dir="$data_home/nfragakis-calendar-dashboard/venv"
+backup_root="$state_home/dot-files/backups/calendar-dashboard/$(date +%Y%m%dT%H%M%S)-$$"
+direct_deps=false
+
+usage() {
+  cat <<'USAGE'
+Usage: setup [--direct-deps]
+
+Installs the user timer and creates a local Evolution + Todoist configuration.
+--direct-deps also creates the isolated Python environment needed by the direct
+Google Calendar and Microsoft Graph adapters.
+USAGE
+}
+
+while (( $# > 0 )); do
+  case "$1" in
+    --direct-deps) direct_deps=true ;;
+    -h|--help) usage; exit 0 ;;
+    *) printf 'Unknown option: %s\n' "$1" >&2; usage >&2; exit 2 ;;
+  esac
+  shift
+done
+
+safe_link() {
+  local source="$1"
+  local target="$2"
+  mkdir -p -- "$(dirname -- "$target")"
+  if [[ -L "$target" ]] && [[ "$(readlink -f -- "$target")" == "$(readlink -f -- "$source")" ]]; then
+    return
+  fi
+  if [[ -e "$target" || -L "$target" ]]; then
+    local relative="${target#/}"
+    mkdir -p -- "$backup_root/$(dirname -- "$relative")"
+    mv -- "$target" "$backup_root/$relative"
+    printf 'Backed up %s -> %s\n' "$target" "$backup_root/$relative"
+  fi
+  ln -s -- "$source" "$target"
+  printf 'Linked %s -> %s\n' "$target" "$source"
+}
+
+mkdir -p -- "$(dirname -- "$config_file")" "$unit_dir" "$bin_dir"
+if [[ ! -e "$config_file" ]]; then
+  install -m 600 "$script_dir/config.example.json" "$config_file"
+  printf 'Created %s\n' "$config_file"
+fi
+
+safe_link "$script_dir/systemd/omarchy-calendar-dashboard.service" "$unit_dir/omarchy-calendar-dashboard.service"
+safe_link "$script_dir/systemd/omarchy-calendar-dashboard.timer" "$unit_dir/omarchy-calendar-dashboard.timer"
+safe_link "$script_dir/calendar-dashboard-sync" "$bin_dir/calendar-dashboard-sync"
+safe_link "$script_dir/calendar-dashboard-auth" "$bin_dir/calendar-dashboard-auth"
+
+if [[ "$direct_deps" == true ]]; then
+  uv_bin="$(command -v uv || true)"
+  if [[ -z "$uv_bin" ]]; then
+    printf 'uv is required for direct provider dependencies. Install it, then rerun with --direct-deps.\n' >&2
+    exit 1
+  fi
+  mkdir -p -- "$(dirname -- "$venv_dir")"
+  # Pin the environment to Arch's system interpreter so python-gobject and the
+  # Evolution typelibs remain visible. A uv-managed Python has its own site
+  # prefix and cannot import the distro's `gi` package.
+  "$uv_bin" venv --clear --python /usr/bin/python3 --system-site-packages "$venv_dir"
+  UV_PROJECT_ENVIRONMENT="$venv_dir" "$uv_bin" sync --locked --project "$script_dir"
+fi
+
+systemctl --user daemon-reload
+"$script_dir/calendar-dashboard-sync" --summary
+systemctl --user enable --now omarchy-calendar-dashboard.timer
+printf 'Calendar dashboard sync is active.\n'
