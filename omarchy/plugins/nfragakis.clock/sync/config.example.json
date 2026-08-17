@@ -13,7 +13,6 @@
   "todoist": {
     "enabled": true,
     "tokenFile": "~/.config/todoist/api_key",
-    "filter": "today | overdue",
     "limit": 50
   }
 }

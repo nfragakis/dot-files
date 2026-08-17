@@ -78,6 +78,10 @@ Panel {
   property string selectedDayKey: todayKey
   readonly property date selectedDate: Model.dateFromKey(selectedDayKey, today)
   readonly property var selectedEvents: Model.eventsForDateKey(eventIndex, selectedDayKey)
+  readonly property var selectedTasks: Model.tasksForDateKey(dashboardTasks, selectedDayKey, todayKey)
+  readonly property string taskEmptyText: selectedDayKey === todayKey
+    ? qsTr("No tasks due today or overdue")
+    : qsTr("No tasks due on this day")
   readonly property string dashboardStatus: Model.dashboardStatus(dashboardDoc, Date.now())
 
   function applyDashboard(raw) {
@@ -854,7 +858,8 @@ Panel {
             anchors.horizontalCenter: parent.horizontalCenter
             selectedDate: root.selectedDate
             events: root.selectedEvents
-            tasks: root.dashboardTasks
+            tasks: root.selectedTasks
+            taskEmptyText: root.taskEmptyText
             foreground: root.contentForeground
             fontFamily: root.contentFontFamily
             statusText: root.dashboardStatus

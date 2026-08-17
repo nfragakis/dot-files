@@ -14,12 +14,22 @@ def fetch(config: dict[str, Any]) -> tuple[list[dict[str, Any]], dict[str, Any]]
 
     query = str(config.get("filter") or "today | overdue")
     limit = max(1, min(200, int(config.get("limit", 50))))
-    params = urllib.parse.urlencode({"query": query, "limit": limit})
-    url = f"https://api.todoist.com/api/v1/tasks/filter?{params}"
-    document = http_json(url, token=token)
+    results: list[dict[str, Any]] = []
+    cursor = ""
+    while True:
+        query_params: dict[str, Any] = {"query": query, "limit": limit}
+        if cursor:
+            query_params["cursor"] = cursor
+        params = urllib.parse.urlencode(query_params)
+        url = f"https://api.todoist.com/api/v1/tasks/filter?{params}"
+        document = http_json(url, token=token)
+        results.extend(document.get("results", []))
+        cursor = str(document.get("next_cursor") or "")
+        if not cursor:
+            break
 
     tasks: list[dict[str, Any]] = []
-    for task in document.get("results", []):
+    for task in results:
         task_id = str(task.get("id") or "")
         if not task_id:
             continue

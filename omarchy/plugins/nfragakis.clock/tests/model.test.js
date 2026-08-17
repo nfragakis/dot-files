@@ -23,6 +23,31 @@ test("event indexing returns selected date rows", () => {
   assert.equal(Model.eventsForDateKey(index, "2026-08-17")[0].title, "One")
 })
 
+test("future day shows only tasks due on that day", () => {
+  const tasks = [
+    { id: "overdue", due: "2026-08-16", content: "Past" },
+    { id: "today", due: "2026-08-17T09:00:00-05:00", content: "Now" },
+    { id: "tomorrow", due: "2026-08-18", content: "Next" },
+    { id: "later", due: "2026-08-19", content: "Later" }
+  ]
+
+  const visible = Model.tasksForDateKey(tasks, "2026-08-18", "2026-08-17")
+
+  assert.deepEqual(visible.map(task => task.id), ["tomorrow"])
+})
+
+test("today includes overdue and today tasks but not future tasks", () => {
+  const tasks = [
+    { id: "overdue", due: "2026-08-16", content: "Past" },
+    { id: "today", due: "2026-08-17T09:00:00-05:00", content: "Now" },
+    { id: "tomorrow", due: "2026-08-18", content: "Next" }
+  ]
+
+  const visible = Model.tasksForDateKey(tasks, "2026-08-17", "2026-08-17")
+
+  assert.deepEqual(visible.map(task => task.id), ["overdue", "today"])
+})
+
 test("open URL policy accepts trusted schemes only", () => {
   assert.equal(Model.safeOpenUrl("https://meet.google.com/abc"), "https://meet.google.com/abc")
   assert.equal(Model.safeOpenUrl("calendar:///?source-uid=a&comp-uid=b"), "calendar:///?source-uid=a&comp-uid=b")

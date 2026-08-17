@@ -74,7 +74,9 @@ def sync(config_path: Path, output_path: Path) -> dict[str, Any]:
                 all_events.append(stale)
 
     tasks: list[dict[str, Any]] = []
-    todoist_config = config.get("todoist") or {}
+    todoist_config = dict(config.get("todoist") or {})
+    window_unit = "day" if future_days == 1 else "days"
+    todoist_config["filter"] = f"overdue | {future_days} {window_unit}"
     if todoist_config.get("enabled", False):
         try:
             from .providers import todoist

@@ -12,7 +12,12 @@ service can combine:
 - Google Calendar API accounts
 - Microsoft Graph / Outlook accounts
 - Evolution Data Server as an optional local adapter
-- Todoist's `today | overdue` filter
+- Todoist tasks due within the configured future window, plus overdue tasks
+
+The default Todoist query follows `window.futureDays`, so selecting a future
+calendar day shows tasks due on that day. Today continues to include overdue
+tasks. The dashboard owns this date window so a stale or narrower
+`todoist.filter` cannot make selected days incomplete.
 
 The provider layer is independent of the QML. Evolution is useful as a working
 fallback on this machine, but it is not required by the plugin.

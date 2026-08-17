@@ -290,6 +290,25 @@ function eventsForDateKey(index, dateKeyValue) {
   return index[String(dateKeyValue)] || []
 }
 
+function taskDateKey(task) {
+  var due = String(task && task.due || "")
+  var match = due.match(/^(\d{4}-\d{2}-\d{2})/)
+  return match ? match[1] : ""
+}
+
+function tasksForDateKey(tasks, selectedDateKey, todayDateKey) {
+  var selected = String(selectedDateKey || "")
+  var includeOverdue = selected !== "" && selected === String(todayDateKey || "")
+  var rows = []
+  for (var i = 0; i < (tasks || []).length; i++) {
+    var due = taskDateKey(tasks[i])
+    // Canonical YYYY-MM-DD keys sort chronologically as strings. taskDateKey
+    // rejects every other shape before this comparison.
+    if (due === selected || (includeOverdue && due !== "" && due < selected)) rows.push(tasks[i])
+  }
+  return rows
+}
+
 function eventColors(index, dateKeyValue, limit) {
   var rows = eventsForDateKey(index, dateKeyValue)
   var colors = []
@@ -356,6 +375,8 @@ if (typeof module !== "undefined") {
     stepMonth: stepMonth,
     indexEventsByDate: indexEventsByDate,
     eventsForDateKey: eventsForDateKey,
+    taskDateKey: taskDateKey,
+    tasksForDateKey: tasksForDateKey,
     eventColors: eventColors,
     dateFromKey: dateFromKey,
     safeOpenUrl: safeOpenUrl,
