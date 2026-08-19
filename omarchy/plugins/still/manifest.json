@@ -2,14 +2,16 @@
   "schemaVersion": 1,
   "id": "still",
   "name": "Still",
-  "version": "0.2.0",
+  "version": "0.4.0",
   "author": "Nick Fragakis",
   "license": "MIT",
-  "description": "Evidence-aware and traditional breathwork for the Omarchy desktop",
+  "description": "Five focused breathing techniques with a procedural bloom and synchronized sessions",
   "kinds": [
+    "service",
     "bar-widget"
   ],
   "entryPoints": {
+    "service": "Service.qml",
     "barWidget": "BarWidget.qml"
   },
   "barWidget": {
@@ -17,6 +19,57 @@
     "description": "Quick breathing and meditation sessions",
     "category": "Wellness",
     "allowMultiple": false,
-    "defaultSection": "right"
+    "defaultSection": "right",
+    "defaults": {
+      "defaultTechnique": "Coherent breathing",
+      "defaultDuration": "2 min",
+      "sound": true,
+      "reducedMotion": false,
+      "reminders": false,
+      "reminderTimes": "10:00,15:00"
+    },
+    "schema": [
+      {
+        "key": "defaultTechnique",
+        "type": "enum",
+        "label": "Default technique",
+        "options": ["Coherent breathing", "Box breathing", "Downshift", "Quiet nasal breathing", "Reduced breathing"],
+        "defaultValue": "Coherent breathing"
+      },
+      {
+        "key": "defaultDuration",
+        "type": "enum",
+        "label": "Default duration",
+        "description": "The session finishes at the next complete breath cycle after this duration.",
+        "options": ["30 sec", "2 min", "5 min"],
+        "defaultValue": "2 min"
+      },
+      {
+        "key": "sound",
+        "type": "boolean",
+        "label": "Play phase sounds",
+        "defaultValue": true
+      },
+      {
+        "key": "reducedMotion",
+        "type": "boolean",
+        "label": "Use reduced motion",
+        "description": "Keep the bloom nearly still while preserving text and timing cues.",
+        "defaultValue": false
+      },
+      {
+        "key": "reminders",
+        "type": "boolean",
+        "label": "Enable reminders",
+        "defaultValue": false
+      },
+      {
+        "key": "reminderTimes",
+        "type": "string",
+        "label": "Reminder times",
+        "description": "Comma-separated local times in 24-hour HH:MM format.",
+        "defaultValue": "10:00,15:00"
+      }
+    ]
   }
 }

@@ -22,7 +22,7 @@ PanelWindow {
     property var borderSpec: Border.surfaceSpec("popups", "border", Color.popups.border, Math.max(1, Style.space(2)))
     property bool focusPrimed: false
 
-    default property alias contentItem: contentHolder.children
+    default property alias panelContent: contentHolder.children
 
     readonly property var coordinatorKey: owner || root
     readonly property var anchorWindow: anchorItem ? anchorItem.QsWindow.window : null
