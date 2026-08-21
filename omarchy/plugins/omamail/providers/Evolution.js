@@ -25,3 +25,23 @@ function parseToken(raw) {
     scope: String(value.scope || "")
   }
 }
+
+// The account list is offered to a user who has not signed in to anything yet,
+// so an unreadable line is an empty list rather than an error: Evolution not
+// being installed is the ordinary case, and the page below still has the
+// OAuth-client route to fall back to.
+function parseAccounts(raw) {
+  var value = null
+  try { value = JSON.parse(String(raw || "")) } catch (e) { value = null }
+  if (!value || typeof value !== "object") return []
+
+  var listed = Array.isArray(value.accounts) ? value.accounts : []
+  var accounts = []
+  for (var i = 0; i < listed.length; i++) {
+    var address = String(listed[i] || "").trim().toLowerCase()
+    if (address.indexOf("@") < 0) continue
+    if (accounts.indexOf(address) >= 0) continue
+    accounts.push(address)
+  }
+  return accounts
+}

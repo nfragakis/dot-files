@@ -1,5 +1,11 @@
 # Dot files
 
+Setting this up on a new machine: read [AGENTS.md](AGENTS.md) first. It covers
+what is linked and what merely resembles what is installed, the setup order,
+and the steps no script can do — Evolution account consent, calendar dashboard
+config, whisper model weights. [PACKAGES.md](PACKAGES.md) lists what has to be
+installed before any of it works.
+
 ## Omarchy
 
 The Omarchy configuration and locally developed shell plugins are kept in this

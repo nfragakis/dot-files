@@ -87,6 +87,10 @@ Requires Omarchy 4, plus `socat`, `secret-tool`, `openssl`, `xdg-open` and
 This custom checkout also integrates with Evolution Data Server when it is
 installed. A matching Evolution Google account supplies short-lived access
 tokens through EDS's supported API; Evolution keeps and refreshes the grant.
+The setup page offers the accounts Evolution already knows, so connecting one
+is a single click with no OAuth client involved. `docs/EVOLUTION.md` covers how
+that works, moving accounts between machines, and the one trap left — a running
+shell overwrites a hand-edited account list.
 
 ## Mailboxes it can open
 

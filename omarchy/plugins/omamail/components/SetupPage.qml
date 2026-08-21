@@ -39,7 +39,22 @@ Column {
     && !!service && service.accountEmail === ""
   readonly property bool toolsMissing: !!auth && auth.toolsChecked && auth.missingTools.length > 0
 
+  // Offered only while this row still needs an address. Once it has one the
+  // broker takes over on its own, and a list of other mailboxes on a page
+  // about this one would be an invitation to overwrite it.
+  readonly property var evolutionOffers: !!service && service.accountEmail === ""
+    ? service.unusedEvolutionAccounts()
+    : []
+
   spacing: Style.space(16)
+
+  // Handing the row an address is the whole of it: `accountId` is derived from
+  // the address, and an account with an id is one AuthManager will ask
+  // Evolution about. Sign-in then happens without anybody pressing sign in.
+  function useEvolutionAccount(address) {
+    if (!service || String(address || "").trim() === "") return
+    service.configureCurrentAccount({ email: String(address).trim(), provider: "gmail" })
+  }
 
   // The fields show what is on disk, so the page always says what the app is
   // actually using rather than going blank after a save.
@@ -57,7 +72,13 @@ Column {
     auth.saveCredentials(clientIdField.text.trim() + (secret === "" ? "" : "\n" + secret))
   }
 
-  Component.onCompleted: syncFromStore()
+  Component.onCompleted: {
+    syncFromStore()
+    // The page is built fresh each time it opens — the Loader above keeps only
+    // the one in use — so this is also what picks up an account added in
+    // Evolution since the last look.
+    if (service) service.refreshEvolutionAccounts()
+  }
 
   Connections {
     target: root.auth
@@ -155,11 +176,78 @@ Column {
     }
   }
 
+  // ------------------------------------------------ Evolution, when it knows
+
+  // Evolution Data Server brokers Google OAuth through its own verified
+  // client, so an account it already holds a grant for needs no client ID, no
+  // Cloud project and no consent screen — only its address, which is what the
+  // two steps below exist to discover.
+  //
+  // This is above them rather than beside them because for anyone who has set
+  // up mail on this desktop it is the whole page: one click and the mailbox is
+  // connected. The walkthrough stays for everybody else.
+  Rectangle {
+    width: parent.width
+    visible: root.evolutionOffers.length > 0
+    implicitHeight: evolutionColumn.implicitHeight + Style.space(24)
+    radius: Style.cornerRadius
+    color: Style.normalFillFor(root.textColor, Color.accent)
+    border.width: 1
+    border.color: Style.hoverBorderFor(root.textColor, Color.accent)
+
+    Column {
+      id: evolutionColumn
+      anchors.left: parent.left
+      anchors.right: parent.right
+      anchors.margins: Style.space(12)
+      anchors.verticalCenter: parent.verticalCenter
+      spacing: Style.space(10)
+
+      Text {
+        width: parent.width
+        text: root.evolutionOffers.length === 1
+          ? "Evolution already has this account"
+          : "Evolution already has these accounts"
+        color: root.textColor
+        font.family: root.panelFontFamily
+        font.pixelSize: Style.font.bodySmall
+        font.bold: true
+      }
+
+      Text {
+        width: parent.width
+        text: "Connect one and Evolution keeps the sign-in. Nothing below is needed."
+        color: root.dimColor
+        font.family: root.panelFontFamily
+        font.pixelSize: Style.font.caption
+        wrapMode: Text.WordWrap
+      }
+
+      Repeater {
+        model: root.evolutionOffers
+
+        Button {
+          required property var modelData
+          text: "Connect " + modelData
+          foreground: root.textColor
+          bordered: true
+          fontSize: Style.font.bodySmall
+          onClicked: root.useEvolutionAccount(modelData)
+        }
+      }
+    }
+  }
+
   // ------------------------------------------------------- step 1: client
 
   Step {
     number: "1"
-    title: "Create a client in Google Cloud"
+    // Demoted to the alternative once Evolution has offered something: the
+    // heading a user reads first should not describe work they do not have
+    // to do.
+    title: root.evolutionOffers.length > 0
+      ? "Or create a client in Google Cloud"
+      : "Create a client in Google Cloud"
     done: root.configured && !root.clientStepReopened
     doneSummary: root.auth ? "Client connected · " + root.auth.clientDescription : ""
     reopenable: true

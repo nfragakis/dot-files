@@ -5,6 +5,7 @@ import "account"
 
 import "account/Accounts.js" as Accounts
 import "providers/Registry.js" as Provider
+import "providers/Evolution.js" as Evolution
 
 // Every mailbox on this machine, and whichever one is on screen.
 //
@@ -595,6 +596,48 @@ Item {
       root.windowWritePayload = ""
     }
     onExited: root.windowWritePayload = ""
+  }
+
+  // The Google addresses Evolution already holds a grant for, so the setup
+  // page can offer them instead of asking for an OAuth client the broker was
+  // meant to replace. Addresses only — the token is fetched per account, by
+  // AuthManager, when there is an account to fetch it for.
+  //
+  // Probed rather than watched: the answer only matters while somebody is on
+  // the setup page, and a source added in Evolution mid-session is picked up
+  // by reopening that page.
+  property var evolutionAccounts: []
+  property bool evolutionAccountsChecked: false
+
+  function refreshEvolutionAccounts() {
+    if (pluginDir === "" || evolutionAccountsProbe.running) return
+    evolutionAccountsProbe.command = [pluginDir + "/scripts/evolution-accounts.py"]
+    evolutionAccountsProbe.running = true
+  }
+
+  // Which of those addresses are not already a mailbox here. Offering one that
+  // is added would produce the duplicate-account notice, which is a worse way
+  // to say "you already have this" than not offering it.
+  function unusedEvolutionAccounts() {
+    var taken = {}
+    var accounts = accountList ? accountList.accounts : []
+    for (var i = 0; i < accounts.length; i++) {
+      var email = String(accounts[i].email || "").trim().toLowerCase()
+      if (email !== "") taken[email] = true
+    }
+    return (evolutionAccounts || []).filter(function(address) {
+      return !taken[address]
+    })
+  }
+
+  Process {
+    id: evolutionAccountsProbe
+    stdout: StdioCollector { waitForEnd: true }
+    stderr: StdioCollector { waitForEnd: true }
+    onExited: {
+      root.evolutionAccounts = Evolution.parseAccounts(stdout.text)
+      root.evolutionAccountsChecked = true
+    }
   }
 
   FileView {
