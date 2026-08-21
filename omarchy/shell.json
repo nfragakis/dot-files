@@ -37,6 +37,10 @@
           "id": "omarchy.tray"
         },
         {
+          "id": "omamail",
+          "defaultQuery": "in:inbox category:primary"
+        },
+        {
           "id": "still"
         },
         {

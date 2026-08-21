@@ -1,0 +1,1192 @@
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Window
+import Quickshell
+import qs.Commons
+import qs.Ui
+
+import "account/Model.js" as Model
+import "keys/Keymap.js" as Keymap
+import "components"
+
+// The application window. The shell loads this entry point when the plugin is
+// summoned and calls open()/close() on it; the FloatingWindow follows.
+//
+// Compose takes over the content area of this same window rather than opening
+// a second one; Omarchy's panel mechanism would give an extra window a region
+// of its own, which is not what a reply is.
+Item {
+  id: root
+
+  property var shell: null
+  property var manifest: null
+  property var service: null
+  property bool opened: false
+  property bool closingFromHost: false
+
+  readonly property string pluginId: manifest && manifest.id
+    ? String(manifest.id) : "omamail"
+
+  readonly property color foreground: Color.foreground
+  readonly property color background: Color.background
+  readonly property color accent: Color.accent
+  readonly property color urgent: Color.urgent
+  // Destructive controls consume a role named for their meaning. Omarchy's
+  // foundational palette currently calls that source `urgent`; keeping the
+  // mapping here stops account pages from confusing urgency with danger.
+  readonly property color danger: Color.urgent
+  // Mixed toward the ground rather than Qt.darker: on a light theme darkening
+  // an almost-black foreground makes secondary text heavier than body text.
+  readonly property color dim: Qt.rgba(
+    foreground.r * 0.68 + background.r * 0.32,
+    foreground.g * 0.68 + background.g * 0.32,
+    foreground.b * 0.68 + background.b * 0.32, 1)
+  readonly property color dimmer: Qt.rgba(
+    foreground.r * 0.45 + background.r * 0.55,
+    foreground.g * 0.45 + background.g * 0.55,
+    foreground.b * 0.45 + background.b * 0.55, 1)
+  // Omarchy's palette has no separate "primary": `accent` is it. This theme's
+  // accent is near fully saturated, which is right for a 5px unread dot and
+  // wrong for a link sitting inside a paragraph. Same hue, same lightness,
+  // capped saturation — calm enough to read past, still clearly a link.
+  readonly property color link: Qt.hsla(accent.hslHue,
+    Math.min(accent.hslSaturation, 0.55),
+    accent.hslLightness, 1.0)
+
+  readonly property string fontFamily: Style.font.family
+
+  // Two breakpoints, not a continuum: three columns, list-plus-reader with the
+  // sidebar collapsed to a strip, and a single column that swaps list for
+  // reader.
+  readonly property bool wide: window.width >= Style.space(1000)
+  readonly property bool compact: window.width < Style.space(760)
+
+  property string currentView: "list"
+  property string cursorId: ""
+  // Kept across messages: somebody who wants plain text wants it for their
+  // mail, not for one message.
+  property bool plainTextForced: false
+  // Reading zoom for the message body only. The window's own chrome follows
+  // the theme's font scale, which is Omarchy's to set, not this app's.
+  property real bodyZoom: 1.0
+  // 0 means "proportional"; anything else is a width somebody dragged to.
+  property real listWidth: 0
+
+  function zoomBy(step) {
+    bodyZoom = Math.max(0.6, Math.min(2.5, Math.round((bodyZoom + step) * 20) / 20))
+  }
+  property bool shortcutHelpVisible: false
+  property bool setupVisible: false
+  // Which kind of mailbox is being added. Asked before either form, because the
+  // two have nothing in common and guessing from the address would be worse
+  // than asking — a Gmail address is a legitimate IMAP account too.
+  property bool pickingProvider: false
+  // Latched once the question has been answered, so the chooser does not come
+  // back every time a half-finished setup re-renders.
+  property bool providerChosen: false
+  // Latched while a setup or edit page is open. Service.providerId briefly
+  // falls back to Gmail while an account host is rebuilt after saving; that is
+  // transport lifecycle, not a request to replace an IMAP page with Gmail's.
+  property string editingProvider: ""
+  // Set while a picked provider is being turned into an account row, so the
+  // signal that normally lands the user in Settings leaves them on the form.
+  property bool openingNewMailbox: false
+  property bool accountDraftOpen: false
+  property bool settingsVisible: false
+  // Something the window needs to say that no account is reporting — refusing a
+  // duplicate mailbox, for one. Cleared on a timer so it cannot outlive its
+  // moment on the status line.
+  property string notice: ""
+  onNoticeChanged: if (notice !== "") noticeTimer.restart()
+  // Open by default, but narrow. The longest mailbox name is "All mail" — at
+  // 11px monospace that needs about 116px including the icon, the gaps and a
+  // count, so the rail costs little enough to leave standing.
+  //
+  // The service owns it, because the service is what outlives the window: the
+  // rail used to come back open on every restart, which is a preference the
+  // user had already expressed and the window kept forgetting.
+  readonly property bool sidebarCollapsed: !!service && service.sidebarCollapsed
+  function toggleSidebar() {
+    if (service) service.setSidebarCollapsed(!service.sidebarCollapsed)
+  }
+
+  readonly property bool ready: !!service && service.ready
+  // The walkthrough is for having no mailbox at all. A mailbox that has been
+  // added but not signed in yet belongs in settings, next to the ones that are.
+  readonly property bool anyReady: !!service && service.anyAccountReady
+  readonly property bool showSetup: setupVisible || !anyReady
+  // A setup already part-done answers the question by itself: an account with
+  // credentials has had its kind chosen, whether or not this window asked.
+  readonly property bool setupUnderway: !!service && !!service.auth
+    && service.auth.credentialsPresent
+  readonly property bool showPicker: showSetup
+    && (pickingProvider || (!providerChosen && !anyReady && !setupUnderway))
+  readonly property bool showSettings: settingsVisible && !showSetup
+  // Anything the window goes *into*. The mail chrome stands down for all of it.
+  readonly property bool showPage: showSetup || showSettings
+  readonly property bool composing: compose.opened
+
+  function open(payloadJson) {
+    var payload = ({})
+    try { payload = JSON.parse(String(payloadJson || "{}")) || ({}) } catch (e) {}
+    closingFromHost = false
+    opened = true
+    if (service) service.windowOpen = true
+    if (payload.mailbox && service) service.selectMailbox(String(payload.mailbox))
+    if (payload.compose === true) startCompose("new")
+    // The list is usually already loaded by the time the window is summoned —
+    // the service keeps running while it is shut — so waiting for the next
+    // change to seat the cursor leaves the first j with nowhere to move from.
+    cursorId = Model.cursorAfterReload(service ? service.messages : [], cursorId)
+    Qt.callLater(function() { focusScope.applyContextFocus() })
+  }
+
+  function close() {
+    closingFromHost = true
+    opened = false
+    if (service) service.windowOpen = false
+    closingFromHost = false
+  }
+
+  function requestClose() {
+    if (shell && typeof shell.hide === "function") shell.hide(pluginId)
+    else close()
+  }
+
+  // Plain text is a preference and survives; the heavy-document override is a
+  // per-message decision about one specific message and does not.
+  function openMessage(id) {
+    if (!service) return
+    pendingComposeMode = ""
+    reader.forceRichAnyway = false
+    cursorId = String(id || "")
+    service.select(cursorId)
+    currentView = "reader"
+  }
+
+  function backToList() {
+    pendingComposeMode = ""
+    if (service) service.clearSelection()
+    currentView = "list"
+    Qt.callLater(function() { focusScope.applyContextFocus() })
+  }
+
+  // Moving the cursor has to bring the row with it. The list is a Column in a
+  // Flickable rather than a ListView — the panel already owns a scroller — so
+  // there is no positionViewAtIndex and this has to be said out loud.
+  //
+  // Called from here rather than from cursorId changing, because hovering a row
+  // moves the cursor too, and scrolling a half-visible row into view under the
+  // pointer fights the mouse that is pointing at it.
+  function revealCursorRow() {
+    if (!listFlick.visible) return
+    var bounds = list.boundsFor(cursorId)
+    if (!bounds) return
+    listFlick.contentY = Model.contentYToReveal(listFlick.contentY,
+      listFlick.height, list.y + bounds.y, bounds.height,
+      listFlick.contentHeight, Style.space(8))
+  }
+
+  function moveCursor(delta) {
+    if (!service) return
+    var next = service.cursorOffset(cursorId, delta)
+    if (next === "") return
+    cursorId = next
+    revealCursorRow()
+    // Moving is not opening. This used to open whatever it landed on while the
+    // reader was up, which made stepping through a list a way to mark half of
+    // it read without having looked at any of it. Enter and "o" open.
+  }
+
+  // An answer needs the message it is answering, and opening one only starts
+  // the fetch — select() clears the summary and the body first. Beginning the
+  // draft in the same breath addressed nobody and quoted nothing, which is what
+  // the list row's own Reply menu did. Held until the fetch lands instead.
+  property string pendingComposeMode: ""
+
+  function startCompose(mode) {
+    if (!service) return
+    var next = String(mode || "new")
+    if (next !== "new" && !service.selectedMessage) {
+      pendingComposeMode = next
+      return
+    }
+    pendingComposeMode = ""
+    compose.begin(next, service.selectedMessage, service.selectedBody.text)
+  }
+
+  // Answering from the list opens what is being answered first, the way the
+  // row's own menu does. Anything already open is left alone: re-selecting it
+  // would throw away the body that is on screen and fetch it again.
+  function composeFromCursor(mode) {
+    if (!service || cursorId === "") return
+    if (service.selectedId !== cursorId) openMessage(cursorId)
+    startCompose(mode)
+  }
+
+  // Acting on the open message closes it: it is about to leave this list.
+  function actOnCursor(action) {
+    if (!service || cursorId === "") return
+    var acted = cursorId
+    var wasOpen = currentView === "reader" && service.selectedId === acted
+    // Worked out before the action, while the row still has neighbours.
+    var next = Model.cursorAfterRemoval(service.messages, acted)
+    var leaves = !Model.survivesAction(service.mailboxKey, action)
+    service.act(acted, action)
+    if (!leaves) return
+    // The row is going and the cursor must not go with it: a cursor on a
+    // message that is no longer listed cannot be found, so the next j restarts
+    // at the top. Archiving one message used to send it back to the first row.
+    if (wasOpen) {
+      if (next !== "") openMessage(next)
+      else backToList()
+      return
+    }
+    cursorId = next
+    revealCursorRow()
+  }
+
+  function goMailbox(key) {
+    if (!service) return
+    service.selectMailbox(key)
+    backToList()
+  }
+
+  // The rail as the keys see it: one numbered list, the same one the badges
+  // are drawn from, so the number beside a row and the row a number opens are
+  // the same fact rather than two.
+  readonly property var sidebarSlots: service
+    ? Model.sidebarSlots(service.mailboxes, service.labels, 10) : []
+
+  function goSlot(index) {
+    if (!service || index < 0 || index >= sidebarSlots.length) return
+    var slot = sidebarSlots[index]
+    if (slot.kind === "mailbox") return goMailbox(slot.key)
+    // Not a search: the provider decides what selecting a label means, and on
+    // IMAP it is a folder rather than a term to look for.
+    service.selectLabel(slot.name)
+    backToList()
+  }
+
+  // One answer per key id. The ids come from keys/Keymap.js; adding a key is a
+  // row there and a case here, and nothing else. The sequence says which key of
+  // a row fired, for the rows that bind more than one meaning.
+  function runShortcut(id, sequence) {
+    // The sheet is on top, so moving moves it. It is a plain overlay rather
+    // than a popup, which is why its keys can come from here at all — the
+    // switcher's cannot, and answers them itself.
+    if (shortcutHelpVisible) {
+      if (id === "cursorDown") return shortcutHelp.scrollBy(1)
+      if (id === "cursorUp") return shortcutHelp.scrollBy(-1)
+    }
+    if (id === "cursorDown") return moveCursor(1)
+    if (id === "cursorUp") return moveCursor(-1)
+    if (id === "open") return openMessage(cursorId)
+    if (id === "backToList") return backToList()
+    if (id === "readerPageDown") return reader.scrollByPage(1)
+    if (id === "readerPageUp") return reader.scrollByPage(-1)
+    if (id === "openLink") return reader.openFirstLink()
+    if (id === "archive") return actOnCursor("archive")
+    if (id === "trash") return actOnCursor("trash")
+    // Through the same guard actOnCursor applies rather than around it:
+    // starring with nothing selected used to call through with an empty id.
+    if (id === "star") {
+      if (service && cursorId !== "") service.toggleStar(cursorId)
+      return
+    }
+    if (id === "markRead") return actOnCursor("markRead")
+    if (id === "markUnread") return actOnCursor("markUnread")
+    if (id === "reply") return composeFromCursor("reply")
+    if (id === "replyAll") return composeFromCursor("replyAll")
+    if (id === "forward") return composeFromCursor("forward")
+    if (id === "compose") return startCompose("new")
+    if (id === "send") return compose.submit()
+    if (id === "search") return searchBar.focusField()
+    if (id === "goMailbox") return goSlot(Keymap.slotFor(id, sequence))
+    if (id === "showUnread") return goMailbox("unread")
+    if (id === "switchAccount") return accountSwitcher.openCentered()
+    if (id === "nextAccount" && service) return service.switchByOffset(1)
+    if (id === "previousAccount" && service) return service.switchByOffset(-1)
+    if (id === "zoomIn") return zoomBy(0.1)
+    if (id === "zoomOut") return zoomBy(-0.1)
+    if (id === "zoomReset") { bodyZoom = 1.0; return }
+    if (id === "refresh") {
+      if (service) service.refresh()
+      return
+    }
+    if (id === "help") {
+      shortcutHelpVisible = !shortcutHelpVisible
+      return
+    }
+    if (id === "back") return goBack()
+  }
+
+  // What Escape means, in the order the window is stacked. The row menu, the
+  // app menu and the account switcher are absent on purpose: a QQC.Popup with
+  // CloseOnEscape consumes the key itself, so a branch for them here would
+  // never run.
+  function goBack() {
+    if (shortcutHelpVisible) shortcutHelpVisible = false
+    // A query being typed is the nearest thing to leave: clear it if there is
+    // one, then hand the keyboard back to the mailbox. This used to live in
+    // SearchBar as its own Keys handler, which a window Shortcut silently beats.
+    // A query being typed is the nearest thing to leave: clear it if there is
+    // one, then hand the keyboard back. Parked directly rather than through
+    // applyContextFocus, which would still read the context as "search" —
+    // the field has not lost the focus yet at this point.
+    else if (searchBar.fieldFocused) {
+      if (searchBar.queryText !== "") searchBar.clear()
+      focusScope.parkKeyboard()
+    }
+    else if (composing) compose.finish()
+    else if (currentView === "reader") backToList()
+    else if (setupVisible) setupVisible = false
+    else if (settingsVisible) settingsVisible = false
+    else if (service && service.searchQuery !== "") service.search("")
+  }
+
+  Connections {
+    target: root.service
+    ignoreUnknownSignals: true
+    function onReplySent() { compose.finish() }
+    // Every time the list is replaced — first arrival, a mailbox switch, a
+    // search, a refresh that dropped things. A cursor whose message survived
+    // keeps its place; one whose message is gone would be unfindable, and an
+    // unfindable cursor sends the next j to the top of the list.
+    // The message a held draft was waiting for. Selecting one clears the body
+    // and refills it from the network, so this fires twice: the guard is the
+    // summary, which is null until the fetch lands.
+    function onSelectedBodyChanged() {
+      if (root.pendingComposeMode === "") return
+      if (!root.service || !root.service.selectedMessage) return
+      var mode = root.pendingComposeMode
+      root.pendingComposeMode = ""
+      root.startCompose(mode)
+    }
+
+    function onMessagesChanged() {
+      root.cursorId = Model.cursorAfterReload(
+        root.service ? root.service.messages : [], root.cursorId)
+    }
+    // A new account has no mailbox yet, so the only useful place to be is the
+    // page that gives it one.
+    // A new mailbox appears as a row in Settings, waiting to be signed in.
+    // Sending the window to the first-run walkthrough instead showed a setup
+    // that was already finished, for a different account.
+    function onDuplicateAccount(email) {
+      root.notice = email + " is already added"
+    }
+    function onAccountAdded() {
+      // A mailbox added through the chooser goes straight to its own form; the
+      // user has already said what they want and asking them to find the new
+      // row in Settings would be a step backwards. One added any other way
+      // still appears there, waiting to be signed in.
+      if (root.openingNewMailbox) {
+        root.openingNewMailbox = false
+        root.settingsVisible = false
+        root.setupVisible = true
+        return
+      }
+      root.setupVisible = false
+      root.settingsVisible = true
+    }
+  }
+
+  // The three setup pages. Built by the Loader above, one at a time, so the two
+  // not in use hold no half-typed fields and no state to go stale.
+  Component {
+    id: providerPickerPage
+
+    ProviderPicker {
+      textColor: root.foreground
+      dimColor: root.dim
+      panelFontFamily: root.fontFamily
+      canLeave: root.anyReady
+      onBackRequested: {
+        root.pickingProvider = false
+        root.editingProvider = ""
+        root.setupVisible = false
+      }
+      onChosen: function(providerId) {
+        root.pickingProvider = false
+        root.providerChosen = true
+        root.editingProvider = providerId
+        // On first run the row already exists and only needs its kind; after
+        // that, adding a mailbox is what makes one.
+        if (root.service && root.service.hasSavedAccounts) {
+          root.openingNewMailbox = true
+          root.accountDraftOpen = true
+          root.service.addAccount(providerId)
+        } else if (root.service) {
+          root.service.configureCurrentAccount({ provider: providerId })
+        }
+      }
+    }
+  }
+
+  Component {
+    id: gmailSetupPage
+
+    SetupPage {
+      service: root.service
+      textColor: root.foreground
+      dimColor: root.dim
+      dangerColor: root.danger
+      panelFontFamily: root.fontFamily
+      canLeave: root.anyReady
+      accountCount: root.service ? root.service.accountCount : 1
+      onBackRequested: root.leaveSetup()
+      onRemoveRequested: root.removeCurrentAccountFromEditor()
+    }
+  }
+
+  Component {
+    id: imapSetupPage
+
+    ImapSetupPage {
+      service: root.service
+      textColor: root.foreground
+      dimColor: root.dim
+      dangerColor: root.danger
+      panelFontFamily: root.fontFamily
+      canLeave: root.anyReady
+      accountCount: root.service ? root.service.accountCount : 1
+      onBackRequested: root.leaveSetup()
+      onRemoveRequested: root.removeCurrentAccountFromEditor()
+    }
+  }
+
+  function editAccount(index) {
+    if (!service) return
+    var accounts = service.accountSummaries || []
+    editingProvider = index >= 0 && index < accounts.length
+      ? String(accounts[index].provider || "gmail") : "gmail"
+    service.switchToIndex(index)
+    providerChosen = true
+    pickingProvider = false
+    settingsVisible = false
+    setupVisible = true
+  }
+
+  function leaveSetup() {
+    if (accountDraftOpen && service) service.discardCurrentDraft()
+    accountDraftOpen = false
+    setupVisible = false
+    editingProvider = ""
+  }
+
+  function removeCurrentAccountFromEditor() {
+    if (!service || service.accountCount <= 1) return
+    var index = service.indexOfActiveAccount()
+    if (index < 0) return
+    service.removeAccountAt(index)
+    accountDraftOpen = false
+    leaveSetup()
+    settingsVisible = true
+  }
+
+  FloatingWindow {
+    id: window
+    visible: root.opened
+    title: "Omamail"
+    color: root.background
+    implicitWidth: Style.space(980)
+    implicitHeight: Style.space(720)
+    minimumSize: Qt.size(Style.space(760), Style.space(520))
+
+    onVisibleChanged: {
+      if (!visible && root.opened && !root.closingFromHost) root.requestClose()
+    }
+
+    FocusScope {
+      id: focusScope
+      anchors.fill: parent
+      focus: true
+
+      // Where the window is, and the only thing that says what a key means.
+      // A page is a form before it is anything else, a draft beats reading, a
+      // query being typed beats the list underneath it.
+      // Holding Alt names every row on the rail, so the digits are read rather
+      // than remembered. A `Keys` handler, which bindings may not use — but a
+      // modifier on its own cannot be a `Shortcut`, so there is no binding to
+      // route and nothing for `KeyRouter` to own. It accepts nothing: whatever
+      // follows Alt still goes exactly where it went before.
+      //
+      // `activeFocus` is what clears it. Alt+Tab leaves the window with Alt
+      // down and the release lands somewhere else, so waiting for a release
+      // that is never coming would paint the numbers on permanently.
+      property bool altDown: false
+      readonly property bool altHeld: altDown && activeFocus
+        && (keyContext === "list" || keyContext === "reader")
+
+      Keys.onPressed: function(event) {
+        if (event.key === Qt.Key_Alt) focusScope.altDown = true
+      }
+      Keys.onReleased: function(event) {
+        if (event.key === Qt.Key_Alt) focusScope.altDown = false
+      }
+      onActiveFocusChanged: if (!activeFocus) altDown = false
+
+      readonly property string keyContext:
+          root.showPage  ? "page"
+        : root.composing ? "compose"
+        : searchBar.fieldFocused ? "search"
+        : root.currentView === "reader" ? "reader"
+        : "list"
+
+      // The context owns the keyboard. Changing it moves the focus to whatever
+      // that context types into, or parks it when the context types into
+      // nothing — so a field that has been dismissed cannot go on eating keys.
+      //
+      // Keeping these as two things is the bug this replaces: the context came
+      // from the screen while the focus stayed wherever the last click left it,
+      // and a closed compose field kept swallowing j and k. One mechanism now,
+      // and there is nothing to keep in step.
+      onKeyContextChanged: Qt.callLater(applyContextFocus)
+      function applyContextFocus() {
+        if (keyContext === "compose") compose.takeFocus()
+        else if (keyContext === "search") searchBar.focusField()
+        else parkKeyboard()
+      }
+
+      // forceActiveFocus on the scope itself is a no-op: it re-elects the
+      // scope's current focus item, which is the very field being left. It has
+      // to land on a plain Item for the field to actually let go.
+      function parkKeyboard() {
+        keyboardHome.forceActiveFocus()
+      }
+
+      // Where the keyboard lives when nothing is being typed into.
+      Item {
+        id: keyboardHome
+        width: 1
+        height: 1
+      }
+
+      // ------------------------------------------------------------ header
+
+      Item {
+        id: header
+        anchors.top: parent.top
+        anchors.left: parent.left
+        anchors.right: parent.right
+        height: Style.space(48)
+
+        // Identity first, controls after, with a rule between them: the mark
+        // and the name say what this window is, and everything to their right
+        // does something.
+        Row {
+          id: headerLeft
+          anchors.left: parent.left
+          anchors.leftMargin: Style.space(14)
+          anchors.verticalCenter: parent.verticalCenter
+          spacing: Style.space(8)
+
+          ActionIcon {
+            anchors.verticalCenter: parent.verticalCenter
+            name: "gmail"
+            iconSize: Style.font.iconLarge
+            color: root.foreground
+            brand: true
+          }
+
+          Text {
+            anchors.verticalCenter: parent.verticalCenter
+            visible: !root.compact
+            text: "Omamail"
+            color: root.foreground
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.title
+          }
+
+          // Next to the mark: this is the window's own menu, not an action on
+          // the mailbox. Anchored to the button's own edge so it lands in the
+          // same place however the control was pressed.
+          IconButton {
+            id: menuButton
+            anchors.verticalCenter: parent.verticalCenter
+            iconName: "menu"
+            tooltipText: "Menu"
+            foreground: root.dim
+            hoverColor: root.foreground
+            fontFamily: root.fontFamily
+            selected: appMenu.opened
+            onClicked: {
+              var scene = mapToGlobal(0, height)
+              appMenu.openAt(scene.x, scene.y)
+            }
+          }
+        }
+
+        // The slot is whatever the two clusters leave, so the field shrinks with
+        // the window instead of running underneath Check mail. Centring it in
+        // the header and reserving a fixed width could not work: the reserve is
+        // split evenly either side, while the controls are all on the left.
+        Item {
+          id: searchSlot
+          anchors.left: headerLeft.right
+          anchors.right: headerRight.left
+          anchors.leftMargin: Style.space(12)
+          anchors.rightMargin: Style.space(12)
+          anchors.verticalCenter: parent.verticalCenter
+          height: searchBar.implicitHeight
+
+          SearchBar {
+            id: searchBar
+            anchors.verticalCenter: parent.verticalCenter
+            // Centred on the header rather than on the gap, so it lines up with
+            // the window instead of with whatever the controls happen to leave.
+            // Clamped into the slot, which is what keeps it off Check mail when
+            // the two clusters are not the same width.
+            x: Math.max(0, Math.min(parent.width - width,
+              (header.width - width) / 2 - parent.x))
+            // Capped well short of the gap it is given: a search field as wide
+            // as the window looks like the window's main event, and it is not.
+            width: Math.min(Style.space(340), parent.width)
+            // Below this it is a slot too small to type in; the shortcut still
+            // works and reopens it as the window grows.
+            visible: !root.showPage && parent.width >= Style.space(120)
+          textColor: root.foreground
+          accentColor: root.accent
+          panelFontFamily: root.fontFamily
+          // A search replaces the list, so the message still open in the
+          // reader is almost certainly not in the results any more.
+          onSubmitted: function(query) {
+            if (!root.service) return
+            root.service.search(query)
+            root.backToList()
+          }
+          onCleared: {
+            if (!root.service) return
+            root.service.search("")
+            root.backToList()
+          }
+          }
+        }
+
+        Row {
+          id: headerRight
+          anchors.right: parent.right
+          anchors.rightMargin: Style.space(14)
+          anchors.verticalCenter: parent.verticalCenter
+          spacing: Style.space(4)
+
+          // Checking for mail and writing one are both things you do to the
+          // mailbox as a whole, so they sit together. The menu is the window's
+          // own, and it stays on the left with the mark.
+          IconButton {
+            anchors.verticalCenter: parent.verticalCenter
+            visible: !root.showPage
+            iconName: "refresh"
+            tooltipText: root.service && root.service.listLoading
+              ? "Checking for mail…" : "Check mail · F5"
+            foreground: root.dim
+            hoverColor: root.foreground
+            fontFamily: root.fontFamily
+            enabled: root.ready && !(root.service && root.service.listLoading)
+            onClicked: if (root.service) root.service.refresh()
+          }
+
+          IconButton {
+            anchors.verticalCenter: parent.verticalCenter
+            visible: !root.showPage
+            iconName: "send"
+            tooltipText: "Compose · c"
+            foreground: root.dim
+            hoverColor: root.foreground
+            fontFamily: root.fontFamily
+            enabled: root.ready
+            onClicked: root.startCompose("new")
+          }
+
+        }
+
+        PanelSeparator {
+          anchors.bottom: parent.bottom
+          width: parent.width
+          foreground: root.foreground
+        }
+      }
+
+      // -------------------------------------------------------------- body
+
+      Item {
+        id: body
+        anchors.top: header.bottom
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: statusBar.top
+
+        MailboxSidebar {
+          id: sidebar
+          anchors.left: parent.left
+          anchors.top: parent.top
+          anchors.bottom: parent.bottom
+          width: root.sidebarCollapsed ? Style.space(44) : Style.space(148)
+          visible: !root.compact && !root.showPage && !root.composing
+          collapsed: root.sidebarCollapsed
+          service: root.service
+          textColor: root.foreground
+          accentColor: root.accent
+          dimColor: root.dim
+          panelFontFamily: root.fontFamily
+          switcherOpen: accountSwitcher.opened
+          slots: root.sidebarSlots
+          numbersVisible: focusScope.altHeld
+          onSwitcherRequested: function(sceneX, sceneY) { accountSwitcher.openAt(sceneX, sceneY) }
+          onMailboxSelected: function(key) { root.goMailbox(key) }
+          // Not a search: the provider decides what selecting a label means,
+          // and on IMAP it is a folder rather than a term to look for.
+          onLabelSelected: function(labelId, name) {
+            root.service.selectLabel(name)
+            root.backToList()
+          }
+        }
+
+        // Narrow windows lose the sidebar; the same mailboxes come back as a
+        // scrolling strip above the list.
+        MailboxTabs {
+          id: tabs
+          anchors.top: parent.top
+          anchors.left: parent.left
+          anchors.right: parent.right
+          anchors.margins: Style.space(14)
+          visible: root.compact && !root.showPage && !root.composing && root.currentView === "list"
+          textColor: root.foreground
+          panelFontFamily: root.fontFamily
+          // The account's own mailboxes, not a fixed set: this row and the
+          // sidebar it replaces on a narrow window must offer the same ones.
+          allMailboxes: root.service ? root.service.mailboxes : []
+          current: root.service ? root.service.mailboxKey : "inbox"
+          unread: root.service ? root.service.inboxUnread : 0
+          onSelected: function(key) { root.goMailbox(key) }
+        }
+
+        Item {
+          id: listColumn
+          anchors.left: sidebar.visible ? sidebar.right : parent.left
+          anchors.top: tabs.visible ? tabs.bottom : parent.top
+          anchors.bottom: parent.bottom
+          anchors.topMargin: tabs.visible ? Style.space(8) : 0
+          // Proportional until somebody drags the divider, then whatever they
+          // dragged it to. The floor is low on purpose: at a hundred pixels the
+          // column is a strip of times and initials, which is a legitimate way
+          // to work when the message is what you are reading. Refusing to go
+          // there was the app deciding how someone else should use their screen.
+          width: root.compact
+            ? (root.currentView === "list" ? parent.width : 0)
+            : Math.max(Style.space(100),
+                Math.min(parent.width - Style.space(360),
+                  root.listWidth > 0 ? root.listWidth
+                    : Math.min(Style.space(460), Math.round(parent.width * 0.34))))
+          visible: width > 0 && !root.showPage && !root.composing
+
+          // The scroller fills the column so its bar sits on the column edge;
+          // the breathing room is padding on the content, not a margin on the
+          // viewport, which would push the bar inward with it.
+          Flickable {
+            id: listFlick
+            anchors.fill: parent
+            contentWidth: width
+            contentHeight: list.implicitHeight + Style.space(16)
+            clip: true
+            boundsBehavior: Flickable.StopAtBounds
+            ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+
+            MessageList {
+              id: list
+              y: Style.space(8)
+              // Full width, so selected and hovered rows meet the splitter.
+              // Text and action breathing room belongs inside MessageRow;
+              // shrinking the whole list leaves a conspicuous dead strip.
+              width: listFlick.width
+              service: root.service
+              textColor: root.foreground
+              accentColor: root.accent
+              dimColor: root.dim
+              panelFontFamily: root.fontFamily
+              cursorId: root.cursorId
+              onMessageActivated: function(id) { root.openMessage(id) }
+              onMenuRequested: function(id, sceneX, sceneY) {
+                root.cursorId = id
+                rowMenu.openAt(id, sceneX, sceneY)
+              }
+            }
+          }
+
+        }
+
+        // The divider between the list and the message, and the handle that
+        // moves it. A hairline is the right thing to look at and the wrong
+        // thing to aim at, so the grab area is wider than the rule it draws.
+        Item {
+          id: listSplitter
+          anchors.left: listColumn.right
+          anchors.top: parent.top
+          anchors.bottom: parent.bottom
+          width: Style.space(5)
+          visible: listColumn.visible && !root.compact
+          z: 5
+
+          PanelSeparator {
+            // The visible rule meets the list edge. The rest of the splitter's
+            // width remains to its right as an easy drag target.
+            anchors.left: parent.left
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
+            width: 1
+            foreground: root.foreground
+          }
+
+          MouseArea {
+            anchors.fill: parent
+            cursorShape: Qt.SplitHCursor
+            property real grabbedAt: 0
+            property real grabbedWidth: 0
+
+            onPressed: function(mouse) {
+              grabbedAt = mapToItem(body, mouse.x, mouse.y).x
+              grabbedWidth = listColumn.width
+            }
+            onPositionChanged: function(mouse) {
+              if (!pressed) return
+              var moved = mapToItem(body, mouse.x, mouse.y).x - grabbedAt
+              root.listWidth = grabbedWidth + moved
+            }
+            // Back to the proportional default, which is what most people
+            // want after one bad drag.
+            onDoubleClicked: root.listWidth = 0
+          }
+        }
+
+        MessageReader {
+          id: reader
+          anchors.left: listSplitter.visible ? listSplitter.right : parent.left
+          anchors.right: parent.right
+          anchors.top: parent.top
+          anchors.bottom: parent.bottom
+          visible: !root.showPage && !root.composing
+            && (!root.compact || root.currentView === "reader")
+          service: root.service
+          textColor: root.foreground
+          backgroundColor: root.background
+          accentColor: root.accent
+          linkColor: root.link
+          dimColor: root.dim
+          dimmerColor: root.dimmer
+          panelFontFamily: root.fontFamily
+          zoom: root.bodyZoom
+          showBack: root.compact
+          forcePlainText: root.plainTextForced
+          onTogglePlainTextRequested: root.plainTextForced = !root.plainTextForced
+          onZoomRequested: function(step) { root.zoomBy(step) }
+          onZoomResetRequested: root.bodyZoom = 1.0
+          onBackRequested: root.backToList()
+          onComposeRequested: function(mode) { root.startCompose(mode) }
+          onActionRequested: function(action) {
+            if (root.service && root.service.selectedId !== "") {
+              root.cursorId = root.service.selectedId
+              root.actOnCursor(action)
+            }
+          }
+        }
+
+        // Composing takes the whole body. Omarchy's panel mechanism would give
+        // a second window its own region, which is not what a reply is.
+        ComposeView {
+          id: compose
+          anchors.fill: parent
+          visible: root.composing && !root.showPage
+          service: root.service
+          textColor: root.foreground
+          backgroundColor: root.background
+          accentColor: root.accent
+          dimColor: root.dim
+          dimmerColor: root.dimmer
+          panelFontFamily: root.fontFamily
+        }
+
+        // Setup takes the whole body: there is nothing else to look at until
+        // the mailbox is connected.
+        Flickable {
+          id: setupFlick
+          anchors.fill: parent
+          anchors.margins: Style.space(18)
+          visible: root.showSetup
+          contentWidth: width
+          contentHeight: setupHolder.implicitHeight
+          clip: true
+          boundsBehavior: Flickable.StopAtBounds
+          ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+
+          // A holder the width of the viewport, so the page below can centre
+          // against something real. Anchoring beats arithmetic here: a
+          // Flickable reparents its children, and an x binding written against
+          // the Flickable's own width lands before that reparenting settles.
+          Item {
+            id: setupHolder
+            width: setupFlick.width
+            implicitHeight: setup.implicitHeight
+
+          // Three setups that share nothing but their place on screen: a
+          // chooser for a mailbox whose kind is not settled yet, then whichever
+          // of the two forms that kind needs. A Loader rather than three
+          // visibilities, so the page not in use holds no fields and no state.
+          Loader {
+            id: setup
+            // A measure this long is unreadable across a wide window, so it is
+            // capped rather than stretched.
+            anchors.horizontalCenter: parent.horizontalCenter
+            width: Math.min(setupHolder.width, Style.space(560))
+            sourceComponent: root.showPicker
+              ? providerPickerPage
+              : (Model.setupProvider(root.editingProvider,
+                  root.service ? root.service.providerId : "") === "imap"
+                ? imapSetupPage : gmailSetupPage)
+          }
+          }
+        }
+
+        // The settings page, which is where mailboxes are added and removed.
+        Flickable {
+          id: settingsFlick
+          anchors.fill: parent
+          anchors.margins: Style.space(18)
+          visible: root.showSettings
+          contentWidth: width
+          contentHeight: settingsHolder.implicitHeight
+          clip: true
+          boundsBehavior: Flickable.StopAtBounds
+          ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+
+          Item {
+            id: settingsHolder
+            width: settingsFlick.width
+            implicitHeight: settings.implicitHeight
+
+            SettingsPage {
+              id: settings
+              anchors.horizontalCenter: parent.horizontalCenter
+              width: Math.min(settingsHolder.width, Style.space(560))
+              service: root.service
+              textColor: root.foreground
+              dimColor: root.dim
+              accentColor: root.accent
+              urgentColor: root.urgent
+              panelFontFamily: root.fontFamily
+              onBackRequested: root.settingsVisible = false
+              onClientSetupRequested: {
+                root.editingProvider = "gmail"
+                root.setupVisible = true
+              }
+              // Which kind first, then the form for it.
+              onAddRequested: {
+                root.editingProvider = ""
+                root.pickingProvider = true
+                root.setupVisible = true
+              }
+              onEditRequested: function(index) { root.editAccount(index) }
+            }
+          }
+        }
+      }
+
+      // --------------------------------------------------------- status bar
+
+      Item {
+        id: statusBar
+        anchors.bottom: parent.bottom
+        anchors.left: parent.left
+        anchors.right: parent.right
+        height: Style.space(28)
+
+        PanelSeparator {
+          anchors.top: parent.top
+          width: parent.width
+          foreground: root.foreground
+        }
+
+        // The rail's own switch, at the far left of the status line. On the rail
+        // it cost a whole row above the mailboxes; in the header it was a
+        // button about the sidebar sitting among buttons about the mailbox.
+        // The status line is where a view toggle belongs.
+        IconButton {
+          id: railToggle
+          anchors.left: parent.left
+          anchors.leftMargin: Style.space(8)
+          anchors.verticalCenter: parent.verticalCenter
+          visible: !root.compact && !root.showPage && !root.composing
+          iconName: "sidebar"
+          tooltipText: root.sidebarCollapsed ? "Show the sidebar" : "Hide the sidebar"
+          // No fill for the open state. The sidebar standing there is the state,
+          // said far better than a lit square on the status line could say it,
+          // and this control has no business drawing attention to itself.
+          foreground: root.dim
+          hoverColor: root.foreground
+          iconSize: Style.font.iconSmall
+          size: Style.space(20)
+          fontFamily: root.fontFamily
+          onClicked: root.toggleSidebar()
+        }
+
+        Text {
+          id: accountLine
+          anchors.left: railToggle.visible ? railToggle.right : parent.left
+          anchors.leftMargin: railToggle.visible ? Style.space(8) : Style.space(14)
+          // An invisible sibling still holds its place, so the hints must only
+          // take room from this line while they are actually on screen.
+          anchors.right: statusBar.hasNotice
+            ? notice.left
+            : (keyHints.visible ? keyHints.left : parent.right)
+          anchors.rightMargin: Style.space(12)
+          anchors.verticalCenter: parent.verticalCenter
+          // The account already has a home in the sidebar's user bar, so this
+          // says something the window does not say anywhere else: how current
+          // the list is. When the sidebar is hidden it takes the account back,
+          // because then nothing else is carrying it.
+          text: {
+            if (!root.service) return "Not connected"
+            if (!root.ready) return "Not connected"
+            if (root.compact)
+              return root.service.accountEmail + " · " + root.service.inboxUnread + " unread"
+            return Model.statusSummary(root.service.syncedLabel,
+              root.service.resultSummary, root.service.listLoading)
+          }
+          color: root.dim
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.caption
+          elide: Text.ElideRight
+
+        }
+
+        // The right of the status line carries one of two things: what the
+        // window most needs to say, or — when it has nothing to report — what
+        // the keyboard can do from where you are standing.
+        readonly property bool hasNotice: root.notice !== ""
+          || (!!root.service
+            && (root.service.actionStatus !== "" || root.service.lastError !== ""))
+
+        Text {
+          id: notice
+          anchors.right: parent.right
+          anchors.rightMargin: Style.space(14)
+          anchors.verticalCenter: parent.verticalCenter
+          visible: statusBar.hasNotice
+          width: Math.min(implicitWidth, parent.width / 2)
+          horizontalAlignment: Text.AlignRight
+          textFormat: Text.PlainText
+          text: {
+            if (root.notice !== "") return root.notice
+            if (!root.service) return ""
+            if (root.service.actionStatus !== "") return root.service.actionStatus
+            return root.service.lastError
+          }
+          color: root.service && root.service.lastError !== "" && root.service.actionStatus === ""
+            ? root.urgent
+            : root.dim
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.caption
+          elide: Text.ElideRight
+        }
+
+        KeyHints {
+          id: keyHints
+          anchors.right: parent.right
+          anchors.rightMargin: Style.space(14)
+          anchors.verticalCenter: parent.verticalCenter
+          visible: !statusBar.hasNotice && !root.compact
+          textColor: root.foreground
+          dimColor: root.dimmer
+          panelFontFamily: root.fontFamily
+          hints: Keymap.hintsFor(focusScope.keyContext)
+        }
+      }
+
+      // The account menu. It has no trigger of its own: the sidebar's user bar
+      // opens it, and so does the status bar when the sidebar is hidden.
+      AppMenu {
+        id: appMenu
+        anchors.fill: parent
+        textColor: root.foreground
+        panelFontFamily: root.fontFamily
+        signedIn: root.ready
+        accountCount: root.service ? root.service.accountCount : 1
+        onMarkAllReadRequested: if (root.service) root.service.markAllRead()
+        onOpenWebRequested: if (root.service) root.service.openWebInbox()
+        onShortcutsRequested: root.shortcutHelpVisible = true
+        onSetupRequested: root.settingsVisible = true
+        onSwitchAccountRequested: accountSwitcher.openCentered()
+        onProjectRequested: if (root.service) root.service.openProjectPage()
+        onAuthorRequested: if (root.service) root.service.openAuthorPage()
+      }
+
+      // Every mailbox, with its own unread count, opened from the user bar.
+      Timer {
+        id: noticeTimer
+        interval: 6000
+        onTriggered: root.notice = ""
+      }
+
+      AccountSwitcher {
+        id: accountSwitcher
+        anchors.fill: parent
+        textColor: root.foreground
+        accentColor: root.accent
+        urgentColor: root.urgent
+        dimColor: root.dim
+        panelFontFamily: root.fontFamily
+        accounts: root.service ? root.service.accountSummaries : []
+        onAccountChosen: function(index) {
+          if (root.service) root.service.switchToIndex(index)
+          root.backToList()
+        }
+        onAddAccountRequested: {
+          root.editingProvider = ""
+          root.pickingProvider = true
+          root.setupVisible = true
+        }
+        onManageRequested: {
+          root.setupVisible = false
+          root.settingsVisible = true
+        }
+      }
+
+      MessageMenu {
+        id: rowMenu
+        service: root.service
+        textColor: root.foreground
+        urgentColor: root.urgent
+        dimColor: root.dim
+        panelFontFamily: root.fontFamily
+        onComposeRequested: function(mode, id) {
+          root.openMessage(id)
+          root.startCompose(mode)
+        }
+        onActionRequested: function(action, id) {
+          root.cursorId = id
+          root.actOnCursor(action)
+        }
+      }
+
+      ShortcutHelp {
+        id: shortcutHelp
+        anchors.fill: parent
+        visible: root.shortcutHelpVisible
+        textColor: root.foreground
+        backgroundColor: root.background
+        dimColor: root.dim
+        panelFontFamily: root.fontFamily
+        onDismissed: root.shortcutHelpVisible = false
+      }
+
+      // ---------------------------------------------------------- keyboard
+
+      KeyRouter {
+        context: focusScope.keyContext
+        overlay: root.shortcutHelpVisible
+        onTriggered: function(id, sequence) { root.runShortcut(id, sequence) }
+      }
+    }
+  }
+
+}
