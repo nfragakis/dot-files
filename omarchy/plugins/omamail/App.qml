@@ -224,7 +224,9 @@ Item {
     startCompose(mode)
   }
 
-  // Acting on the open message closes it: it is about to leave this list.
+  // Acting on the open message clears the reader: it is about to leave this
+  // list. The list cursor may move to a neighbour, but that message stays
+  // closed until the user explicitly opens it.
   function actOnCursor(action) {
     if (!service || cursorId === "") return
     var acted = cursorId
@@ -237,13 +239,9 @@ Item {
     // The row is going and the cursor must not go with it: a cursor on a
     // message that is no longer listed cannot be found, so the next j restarts
     // at the top. Archiving one message used to send it back to the first row.
-    if (wasOpen) {
-      if (next !== "") openMessage(next)
-      else backToList()
-      return
-    }
     cursorId = next
     revealCursorRow()
+    if (wasOpen) Qt.callLater(function() { focusScope.applyContextFocus() })
   }
 
   function goMailbox(key) {
