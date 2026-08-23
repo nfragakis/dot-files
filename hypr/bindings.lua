@@ -38,4 +38,4 @@ rebind(
   "omarchy-capture-screenrecording --stop-recording || omarchy-menu toggle trigger.capture.screenrecord"
 )
 rebind("SUPER + SHIFT + T", "Activity", { webapp = "https://app.todoist.com/app/today" })
-rebind("SUPER + SHIFT + E", "Activity", "omarchy-launch-or-focus evolution")
+rebind("SUPER + SHIFT + E", "Omamail", "omarchy shell shell toggle omamail '{}'")
