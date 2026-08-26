@@ -151,6 +151,23 @@ for collisions first, and confirm the only outside references — usually
 account in Evolution on the target machine. Plan for the browser step rather
 than trying to route around it.
 
+## Autologin leaves the keyring locked
+
+Evolution's refresh tokens are available after a restart only when GNOME
+Keyring is unlocked. SDDM autologin supplies no password to PAM, so a
+password-protected login keyring cannot be unlocked; the journal reports
+`gkr-pam: no password is available for user` and `couldn't unlock the login
+keyring`. Omamail still has its rows in `~/.config/omamail/accounts.json`, but
+each Gmail row falls back to its sign-in state because the Evolution broker
+cannot retrieve a token.
+
+Do not enable SDDM autologin on a machine using Evolution-brokered Omamail
+accounts. A normal password login lets the existing `pam_gnome_keyring.so`
+entries in `/etc/pam.d/sddm` unlock the keyring at session start. If the setup
+screen appears after a restart, confirm the account file still contains its
+rows and check the boot journal for the messages above before reauthorizing or
+editing account configuration.
+
 ## Verifying
 
 ```bash

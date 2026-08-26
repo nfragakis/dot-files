@@ -38,3 +38,36 @@ repository.
 
 See `sync/config.example.json` and `sync/AUTH.md` to add direct Google or
 Microsoft accounts.
+
+## Move an existing setup to another machine
+
+The default provider configuration is portable and is tracked as
+`sync/config.example.json`. The setup script installs that file when the local
+configuration does not exist. To reuse an existing machine's provider choices
+instead, copy its machine-local configuration before running setup:
+
+```bash
+mkdir -p ~/.config/omarchy
+scp user@old-machine:.config/omarchy/calendar-dashboard.json \
+  ~/.config/omarchy/calendar-dashboard.json
+chmod 600 ~/.config/omarchy/calendar-dashboard.json
+```
+
+Todoist's API token is a credential and must remain outside this repository.
+Transfer it directly between machines, then restrict its permissions:
+
+```bash
+mkdir -p ~/.config/todoist
+scp user@old-machine:.config/todoist/api_key ~/.config/todoist/api_key
+chmod 600 ~/.config/todoist/api_key
+```
+
+Finish by installing the timer and performing the initial sync:
+
+```bash
+~/.config/omarchy/plugins/nfragakis.clock/sync/setup
+```
+
+Evolution account definitions can be copied separately, but their Google
+refresh tokens live in the login keyring and do not transfer this way. Complete
+browser consent in Evolution on the new machine when required.
