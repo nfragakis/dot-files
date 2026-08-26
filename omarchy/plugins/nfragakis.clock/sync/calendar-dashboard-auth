@@ -2,7 +2,8 @@
 
 set -euo pipefail
 
-script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+script_path="$(readlink -f -- "${BASH_SOURCE[0]}")"
+script_dir="$(cd -- "$(dirname -- "$script_path")" && pwd)"
 venv_python="${XDG_DATA_HOME:-$HOME/.local/share}/nfragakis-calendar-dashboard/venv/bin/python"
 
 if [[ ! -x "$venv_python" ]]; then
