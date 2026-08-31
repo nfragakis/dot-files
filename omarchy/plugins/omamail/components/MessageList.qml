@@ -24,6 +24,7 @@ Column {
   property string cursorId: ""
 
   signal messageActivated(string id)
+  signal trashRequested(string id)
   signal menuRequested(string id, real sceneX, real sceneY)
 
   width: parent ? parent.width : 0
@@ -59,7 +60,7 @@ Column {
       onActivated: root.messageActivated(modelData.id)
       onStarToggled: root.service.toggleStar(modelData.id)
       onArchiveRequested: root.service.act(modelData.id, "archive")
-      onTrashRequested: root.service.act(modelData.id, "trash")
+      onTrashRequested: root.trashRequested(modelData.id)
       onMenuRequested: function(sceneX, sceneY) {
         root.menuRequested(modelData.id, sceneX, sceneY)
       }

@@ -111,6 +111,13 @@ function survivesAction(mailboxKey, action) {
   return true
 }
 
+// Moving mail to trash ends the reading task wherever the action came from.
+// Archive keeps its read-through behaviour; trash returns to an unselected
+// list instead of choosing the neighbouring message on the user's behalf.
+function returnsToListAfterAction(action) {
+  return String(action || "") === "trash"
+}
+
 function labelChangesFor(action) {
   if (action === "markRead") return { add: [], remove: ["UNREAD"] }
   if (action === "markUnread") return { add: ["UNREAD"], remove: [] }

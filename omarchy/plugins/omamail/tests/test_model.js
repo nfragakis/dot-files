@@ -61,6 +61,12 @@ assert.strictEqual(model.survivesAction("inbox", "trash"), false)
 assert.strictEqual(model.survivesAction("trash", "trash"), true)
 assert.strictEqual(model.survivesAction("trash", "untrash"), false)
 
+assert.strictEqual(model.returnsToListAfterAction("trash"), true,
+  "moving any message to trash closes the reader")
+assert.strictEqual(model.returnsToListAfterAction("archive"), false,
+  "archive keeps its existing reader flow")
+assert.strictEqual(model.returnsToListAfterAction("markRead"), false)
+
 deepEqual(model.labelChangesFor("archive"), { add: [], remove: ["INBOX"] })
 deepEqual(model.labelChangesFor("star"), { add: ["STARRED"], remove: [] })
 assert.strictEqual(model.labelChangesFor("trash"), null, "trash is its own endpoint, not a label change")

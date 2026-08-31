@@ -224,9 +224,9 @@ Item {
     startCompose(mode)
   }
 
-  // Acting on the open message clears the reader: it is about to leave this
-  // list. The list cursor may move to a neighbour, but that message stays
-  // closed until the user explicitly opens it.
+  // Trash always returns to the unselected list. Other actions that remove an
+  // open message clear the reader and move the list cursor to a neighbour, but
+  // that message stays closed until the user explicitly opens it.
   function actOnCursor(action) {
     if (!service || cursorId === "") return
     var acted = cursorId
@@ -235,6 +235,12 @@ Item {
     var next = Model.cursorAfterRemoval(service.messages, acted)
     var leaves = !Model.survivesAction(service.mailboxKey, action)
     service.act(acted, action)
+    if (Model.returnsToListAfterAction(action)) {
+      if (leaves) cursorId = next
+      backToList()
+      if (leaves) revealCursorRow()
+      return
+    }
     if (!leaves) return
     // The row is going and the cursor must not go with it: a cursor on a
     // message that is no longer listed cannot be found, so the next j restarts
@@ -805,6 +811,10 @@ Item {
               panelFontFamily: root.fontFamily
               cursorId: root.cursorId
               onMessageActivated: function(id) { root.openMessage(id) }
+              onTrashRequested: function(id) {
+                root.cursorId = id
+                root.actOnCursor("trash")
+              }
               onMenuRequested: function(id, sceneX, sceneY) {
                 root.cursorId = id
                 rowMenu.openAt(id, sceneX, sceneY)
