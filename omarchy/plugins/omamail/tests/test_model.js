@@ -328,6 +328,13 @@ deepEqual(model.countStateAfterPage(2, {
     "and so does a list arriving for the first time")
   assert.strictEqual(model.cursorAfterReload([], "b"), "",
     "an empty mailbox has no row to sit on")
+
+  assert.strictEqual(model.currentMessageId("reader", "open", "cursor"), "open",
+    "the message on screen wins over a cursor moved behind it")
+  assert.strictEqual(model.currentMessageId("reader", "", "cursor"), "",
+    "a blank reader does not act on a hidden cursor")
+  assert.strictEqual(model.currentMessageId("list", "open", "cursor"), "cursor",
+    "the cursor is current in the list")
 }
 
 // One numbered list over the rail: mailboxes first, then the labels the server

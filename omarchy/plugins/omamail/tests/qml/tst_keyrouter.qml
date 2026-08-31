@@ -147,6 +147,13 @@ Item {
       compare(host.lastId, "open")
     }
 
+    function test_u_marks_the_current_message_unread() {
+      host.context = "reader"
+      wait(20)
+      keyClick(Qt.Key_U)
+      compare(host.lastId, "markUnread")
+    }
+
     // Answering works from the list as well as the reader: the row's own menu
     // has always offered it, and the keyboard was able to do less than a
     // right-click. What is opened first is App.qml's job.

@@ -224,6 +224,16 @@ Item {
     startCompose(mode)
   }
 
+  // In the reader, "current" is the message on screen, not a cursor that may
+  // have moved behind it with j or k. In the list there is no open message, so
+  // the cursor is the current row.
+  function markCurrentUnread() {
+    if (!service) return
+    var messageId = Model.currentMessageId(currentView,
+      service.selectedId, cursorId)
+    if (messageId !== "") service.act(messageId, "markUnread")
+  }
+
   // Trash always returns to the unselected list. Other actions that remove an
   // open message clear the reader and move the list cursor to a neighbour, but
   // that message stays closed until the user explicitly opens it.
@@ -286,7 +296,6 @@ Item {
     if (id === "cursorDown") return moveCursor(1)
     if (id === "cursorUp") return moveCursor(-1)
     if (id === "open") return openMessage(cursorId)
-    if (id === "backToList") return backToList()
     if (id === "readerPageDown") return reader.scrollByPage(1)
     if (id === "readerPageUp") return reader.scrollByPage(-1)
     if (id === "openLink") return reader.openFirstLink()
@@ -299,7 +308,7 @@ Item {
       return
     }
     if (id === "markRead") return actOnCursor("markRead")
-    if (id === "markUnread") return actOnCursor("markUnread")
+    if (id === "markUnread") return markCurrentUnread()
     if (id === "reply") return composeFromCursor("reply")
     if (id === "replyAll") return composeFromCursor("replyAll")
     if (id === "forward") return composeFromCursor("forward")

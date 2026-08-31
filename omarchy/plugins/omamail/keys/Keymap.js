@@ -40,8 +40,6 @@ var BINDINGS = [
   { id: "open", keys: ["Return", "o"], contexts: MAIL,
     group: "Moving", label: "Open the selected message",
     hintKey: "o", hint: { list: "open", reader: "open" } },
-  { id: "backToList", keys: ["u"], contexts: ["reader"],
-    group: "Moving", label: "Back to the list" },
   { id: "readerPageDown", keys: ["Tab"], contexts: ["reader"],
     group: "Reading", label: "Scroll message down" },
   { id: "readerPageUp", keys: ["Shift+Tab"], contexts: ["reader"],
@@ -59,7 +57,7 @@ var BINDINGS = [
     group: "Acting", label: "Star or unstar" },
   { id: "markRead", keys: ["Shift+I"], contexts: MAIL,
     group: "Acting", label: "Mark read" },
-  { id: "markUnread", keys: ["Shift+U"], contexts: MAIL,
+  { id: "markUnread", keys: ["u", "Shift+U"], contexts: MAIL,
     group: "Acting", label: "Mark unread" },
 
   // Answering works from the list too, the way the row's own menu does: the

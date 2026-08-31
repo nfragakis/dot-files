@@ -86,7 +86,6 @@ used to exist, and they had.
 | `cursorDown` | `j`, `Down` | mail | Move down |
 | `cursorUp` | `k`, `Up` | mail | Move up |
 | `open` | `Return`, `o` | mail | Open the selected message |
-| `backToList` | `u` | reader | Back to the list |
 | `readerPageDown` | `Tab` | reader | Scroll message down |
 | `readerPageUp` | `Shift+Tab` | reader | Scroll message up |
 | `openLink` | `l` | reader | Open the first link |
@@ -94,7 +93,7 @@ used to exist, and they had.
 | `trash` | `d` | mail | Move to trash |
 | `star` | `s` | mail | Star or unstar |
 | `markRead` | `Shift+I` | mail | Mark read |
-| `markUnread` | `Shift+U` | mail | Mark unread |
+| `markUnread` | `u`, `Shift+U` | mail | Mark unread |
 | `reply` | `r` | mail | Reply |
 | `replyAll` | `a` | mail | Reply to all |
 | `forward` | `f` | mail | Forward |

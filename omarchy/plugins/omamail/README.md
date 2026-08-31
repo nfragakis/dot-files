@@ -180,7 +180,7 @@ and the client itself are console-only; there is no CLI for them.
 | `e` | Archive |
 | `d` | Move to trash |
 | `s` | Star or unstar |
-| `Shift+I` / `Shift+U` | Mark read / unread |
+| `Shift+I` / `u` or `Shift+U` | Mark read / unread |
 | `r` / `a` / `f` | Reply, reply all, forward |
 | `c` | Compose |
 | `Ctrl+Enter` | Send |

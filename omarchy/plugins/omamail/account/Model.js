@@ -283,6 +283,14 @@ function cursorAfterReload(list, cursorId) {
   return source[0].id
 }
 
+// The current message is the body on screen in the reader, even when j or k
+// moved the list cursor behind it. A blank reader has no current message and
+// must not fall through to that cursor. In the list, the cursor is current.
+function currentMessageId(view, selectedId, cursorId) {
+  if (String(view || "") === "reader") return String(selectedId || "")
+  return String(cursorId || "")
+}
+
 // Where the scroller has to sit for a row to be on screen. The list is a Column
 // in a Flickable rather than a ListView — the panel already owns a scroller and
 // nesting a second one gives every wheel event two plausible targets — so there

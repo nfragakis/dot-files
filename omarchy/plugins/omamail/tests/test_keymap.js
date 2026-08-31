@@ -129,6 +129,10 @@ assert.strictEqual(keymap.displayFor(byId("open")), "Enter, o")
 assert.strictEqual(keymap.displayFor(byId("readerPageDown")), "Tab")
 assert.strictEqual(keymap.displayFor(byId("readerPageUp")), "Shift+Tab")
 assert.strictEqual(keymap.displayFor(byId("openLink")), "l")
+assert.strictEqual(keymap.displayFor(byId("markUnread")), "u, Shift+U",
+  "bare u marks the current message unread")
+assert.strictEqual(byId("backToList"), undefined,
+  "Escape owns reader navigation after u is reassigned")
 assert.strictEqual(keymap.displayFor(byId("back")), "Esc")
 assert.strictEqual(keymap.displayFor(byId("switchAccount")), "Alt+A")
 assert.strictEqual(keymap.displayFor(byId("nextAccount")), "Ctrl+Tab")
