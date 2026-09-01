@@ -1,6 +1,7 @@
 import QtQuick
 import qs.Commons
 import qs.Ui
+import "../providers/Registry.js" as Provider
 
 // Connecting a mailbox, as two steps instead of a wall of instructions.
 //
@@ -17,6 +18,7 @@ Column {
   required property color textColor
   required property color dimColor
   required property color dangerColor
+  required property color accentColor
   required property string panelFontFamily
   property bool canLeave: false
   property int accountCount: 1
@@ -38,19 +40,12 @@ Column {
   readonly property bool addingMailbox: configured && !signedIn
     && !!service && service.accountEmail === ""
   readonly property bool toolsMissing: !!auth && auth.toolsChecked && auth.missingTools.length > 0
-
-  // Offered only while this row still needs an address. Once it has one the
-  // broker takes over on its own, and a list of other mailboxes on a page
-  // about this one would be an invitation to overwrite it.
   readonly property var evolutionOffers: !!service && service.accountEmail === ""
     ? service.unusedEvolutionAccounts()
     : []
 
   spacing: Style.space(16)
 
-  // Handing the row an address is the whole of it: `accountId` is derived from
-  // the address, and an account with an id is one AuthManager will ask
-  // Evolution about. Sign-in then happens without anybody pressing sign in.
   function useEvolutionAccount(address) {
     if (!service || String(address || "").trim() === "") return
     service.configureCurrentAccount({ email: String(address).trim(), provider: "gmail" })
@@ -60,7 +55,7 @@ Column {
   // actually using rather than going blank after a save.
   function syncFromStore() {
     if (!auth) return
-    clientIdField.text = auth.clientId
+    clientIdField.text = String(auth.clientId || "")
     clientSecretField.text = auth.credentials ? String(auth.credentials.clientSecret || "") : ""
   }
 
@@ -74,9 +69,6 @@ Column {
 
   Component.onCompleted: {
     syncFromStore()
-    // The page is built fresh each time it opens — the Loader above keeps only
-    // the one in use — so this is also what picks up an account added in
-    // Evolution since the last look.
     if (service) service.refreshEvolutionAccounts()
   }
 
@@ -105,47 +97,17 @@ Column {
 
   // ------------------------------------------------------------------ hero
 
-  Item {
+  ProviderHero {
     width: parent.width
-    implicitHeight: Math.max(heroIcon.height, heroText.implicitHeight)
-
-    GmailIcon {
-      id: heroIcon
-      anchors.left: parent.left
-      anchors.top: parent.top
-      anchors.topMargin: Style.space(2)
-      iconSize: Style.font.displayLarge
-      color: root.textColor
-    }
-
-    Column {
-      id: heroText
-      anchors.left: heroIcon.right
-      anchors.leftMargin: Style.space(14)
-      anchors.right: parent.right
-      anchors.top: parent.top
-      spacing: Style.space(4)
-
-      Text {
-        width: parent.width
-        text: root.addingMailbox ? "Add a mailbox" : "Connect your mailbox"
-        color: root.textColor
-        font.family: root.panelFontFamily
-        font.pixelSize: Style.font.heading
-        font.bold: true
-      }
-
-      Text {
-        width: parent.width
-        text: root.addingMailbox
-          ? "Signing in with the OAuth client you already set up. Pick the Google account you want to add."
-          : "Google issues Gmail API access per project, so this app signs in with an OAuth client you own. About two minutes, once."
-        color: root.dimColor
-        font.family: root.panelFontFamily
-        font.pixelSize: Style.font.bodySmall
-        wrapMode: Text.WordWrap
-      }
-    }
+    providerId: "gmail"
+    // The brand is in the heading because the heading is half the link, and
+    // "Connect your mailbox" named no service at all.
+    title: root.addingMailbox ? "Add a Gmail mailbox" : "Connect your Gmail mailbox"
+    detail: "Google issues Gmail API access per project, so this app signs in with an OAuth client you own. About two minutes, once."
+    textColor: root.textColor
+    dimColor: root.dimColor
+    panelFontFamily: root.panelFontFamily
+    onWebsiteRequested: if (root.service) root.service.openProviderWebsite("gmail")
   }
 
   // Missing dependencies come first: neither step below can finish without
@@ -155,9 +117,9 @@ Column {
     visible: root.toolsMissing
     implicitHeight: missingText.implicitHeight + Style.space(20)
     radius: Style.cornerRadius
-    color: Style.normalFillFor(root.textColor, Color.accent)
+    color: Style.normalFillFor(root.textColor, root.accentColor)
     border.width: 1
-    border.color: Style.hoverBorderFor(root.textColor, Color.accent)
+    border.color: Style.hoverBorderFor(root.textColor, root.accentColor)
 
     Text {
       id: missingText
@@ -176,24 +138,16 @@ Column {
     }
   }
 
-  // ------------------------------------------------ Evolution, when it knows
+  // ------------------------------------------------ Evolution, when available
 
-  // Evolution Data Server brokers Google OAuth through its own verified
-  // client, so an account it already holds a grant for needs no client ID, no
-  // Cloud project and no consent screen — only its address, which is what the
-  // two steps below exist to discover.
-  //
-  // This is above them rather than beside them because for anyone who has set
-  // up mail on this desktop it is the whole page: one click and the mailbox is
-  // connected. The walkthrough stays for everybody else.
   Rectangle {
     width: parent.width
     visible: root.evolutionOffers.length > 0
     implicitHeight: evolutionColumn.implicitHeight + Style.space(24)
     radius: Style.cornerRadius
-    color: Style.normalFillFor(root.textColor, Color.accent)
+    color: Style.normalFillFor(root.textColor, root.accentColor)
     border.width: 1
-    border.color: Style.hoverBorderFor(root.textColor, Color.accent)
+    border.color: Style.hoverBorderFor(root.textColor, root.accentColor)
 
     Column {
       id: evolutionColumn
@@ -225,7 +179,6 @@ Column {
 
       Repeater {
         model: root.evolutionOffers
-
         Button {
           required property var modelData
           text: "Connect " + modelData
@@ -242,9 +195,6 @@ Column {
 
   Step {
     number: "1"
-    // Demoted to the alternative once Evolution has offered something: the
-    // heading a user reads first should not describe work they do not have
-    // to do.
     title: root.evolutionOffers.length > 0
       ? "Or create a client in Google Cloud"
       : "Create a client in Google Cloud"
@@ -441,7 +391,7 @@ Column {
     visible: !!root.auth && root.auth.lastError !== ""
     textFormat: Text.PlainText
     text: root.auth ? root.auth.lastError : ""
-    color: Color.urgent
+    color: root.dangerColor
     font.family: root.panelFontFamily
     font.pixelSize: Style.font.caption
     wrapMode: Text.WordWrap
@@ -510,7 +460,7 @@ Column {
         anchors.top: parent.top
         visible: !step.done
         text: step.number
-        color: step.active ? Color.accent : root.dimColor
+        color: step.active ? root.accentColor : root.dimColor
         font.family: root.panelFontFamily
         font.pixelSize: Style.font.bodySmall
         font.bold: step.active
@@ -522,7 +472,7 @@ Column {
         visible: step.done
         name: "check"
         iconSize: Style.font.bodySmall
-        color: Color.accent
+        color: root.accentColor
       }
     }
 

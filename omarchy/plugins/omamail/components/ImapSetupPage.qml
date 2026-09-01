@@ -2,6 +2,7 @@ import QtQuick
 import qs.Commons
 import qs.Ui
 import "../providers/ImapProtocol.js" as Imap
+import "../account/Aliases.js" as Aliases
 
 // Connecting an ordinary mailbox: an address, a password, and — only if the
 // guess was wrong — the servers.
@@ -18,6 +19,7 @@ Column {
   required property color textColor
   required property color dimColor
   required property color dangerColor
+  required property color accentColor
   required property string panelFontFamily
   property bool canLeave: false
   property int accountCount: 1
@@ -39,14 +41,15 @@ Column {
   spacing: Style.space(16)
 
   function currentSettings() {
-    return {
+    return Imap.setupSettings({
+      address: addressField.text,
       imapHost: imapHostField.text.trim(),
-      imapPort: imapPortField.text.trim() === "" ? 993 : Number(imapPortField.text.trim()),
+      imapPort: imapPortField.text,
       smtpHost: smtpHostField.text.trim(),
-      smtpPort: smtpPortField.text.trim() === "" ? 465 : Number(smtpPortField.text.trim()),
-      username: (usernameField.text.trim() || addressField.text.trim()),
-      insecure: false
-    }
+      smtpPort: smtpPortField.text,
+      username: usernameField.text,
+      aliases: aliasesField.text
+    })
   }
 
   // The address drives the servers until the user takes them over. Once a field
@@ -72,6 +75,9 @@ Column {
     addressField.text = service ? service.accountAddress : ""
     if (settings.username !== "") {
       usernameField.text = settings.username
+    }
+    if (settings.aliases) {
+      aliasesField.text = Aliases.format(settings.aliases)
     }
     if (settings.imapHost !== "") {
       imapHostField.text = settings.imapHost
@@ -164,9 +170,9 @@ Column {
     visible: root.toolsMissing
     implicitHeight: missingText.implicitHeight + Style.space(20)
     radius: Style.cornerRadius
-    color: Style.normalFillFor(root.textColor, Color.accent)
+    color: Style.normalFillFor(root.textColor, root.accentColor)
     border.width: 1
-    border.color: Style.hoverBorderFor(root.textColor, Color.accent)
+    border.color: Style.hoverBorderFor(root.textColor, root.accentColor)
 
     Text {
       id: missingText
@@ -256,7 +262,7 @@ Column {
       width: parent.width
       visible: text !== ""
       text: ""
-      color: Color.urgent
+      color: root.dangerColor
       font.family: root.panelFontFamily
       font.pixelSize: Style.font.caption
       wrapMode: Text.WordWrap
@@ -347,12 +353,22 @@ Column {
         font.pixelSize: Style.font.bodySmall
         placeholderText: "Username — only if it is not the address"
       }
+
+      TextField {
+        id: aliasesField
+        objectName: "imap-aliases-field"
+        width: parent.width
+        foreground: root.textColor
+        font.family: root.panelFontFamily
+        font.pixelSize: Style.font.bodySmall
+        placeholderText: "Send-as aliases — comma-separated (e.g. alias@icloud.com (default))"
+      }
     }
 
     Text {
       width: parent.width
       visible: root.serversVisible
-      text: "Connections are TLS on the port given. Plain text is refused unless the server is on this machine."
+      text: "TLS on connect, or a required STARTTLS upgrade on ports 143, 25 and 587. Plain text is refused unless the server is on this machine."
       color: root.dimColor
       font.family: root.panelFontFamily
       font.pixelSize: Style.font.caption
@@ -365,7 +381,7 @@ Column {
 
     Button {
       visible: !root.signedIn
-      text: root.busy ? "Checking…" : "Connect the mailbox"
+      text: root.busy ? "Checking" : "Connect the mailbox"
       enabled: !root.busy && addressField.text.trim() !== "" && passwordField.text !== ""
       foreground: root.textColor
       bordered: true

@@ -27,16 +27,4 @@ assert.strictEqual(
   3600
 )
 
-deepEqual(evolution.parseAccounts(""), [])
-deepEqual(evolution.parseAccounts("not json"), [])
-deepEqual(evolution.parseAccounts('{"accounts":[]}'), [])
-deepEqual(evolution.parseAccounts('{"accounts":["you@gmail.com"]}'), ["you@gmail.com"])
-// A Google collection is several sources sharing one address.
-deepEqual(
-  evolution.parseAccounts('{"accounts":["You@Gmail.com","you@gmail.com"]}'),
-  ["you@gmail.com"]
-)
-// Anything without an address is a source, not a mailbox.
-deepEqual(evolution.parseAccounts('{"accounts":["system-proxy",""]}'), [])
-
 console.log("test_evolution.js ok")

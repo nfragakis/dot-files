@@ -24,7 +24,6 @@ Column {
   property string cursorId: ""
 
   signal messageActivated(string id)
-  signal trashRequested(string id)
   signal menuRequested(string id, real sceneX, real sceneY)
 
   width: parent ? parent.width : 0
@@ -57,10 +56,11 @@ Column {
       hasCursor: root.cursorId === modelData.id
       selected: root.service.selectedId === modelData.id
       canArchive: root.service.canArchive
+      contentDirection: root.service.contentDirection
       onActivated: root.messageActivated(modelData.id)
       onStarToggled: root.service.toggleStar(modelData.id)
       onArchiveRequested: root.service.act(modelData.id, "archive")
-      onTrashRequested: root.trashRequested(modelData.id)
+      onTrashRequested: root.service.act(modelData.id, "trash")
       onMenuRequested: function(sceneX, sceneY) {
         root.menuRequested(modelData.id, sceneX, sceneY)
       }
@@ -96,25 +96,20 @@ Column {
     }
   }
 
+  // Pagination is the only thing this footer needs to say. A result estimate
+  // promoted an unreliable server number into interface hierarchy it did not
+  // deserve, and repeated it again in the window status line.
   Item {
     width: parent.width
-    visible: Model.showListFooter(root.service.messages.length)
-    implicitHeight: Style.space(30)
-
-    Text {
-      anchors.left: parent.left
-      anchors.verticalCenter: parent.verticalCenter
-      text: root.service.resultSummary
-      color: Qt.rgba(root.textColor.r, root.textColor.g, root.textColor.b, 0.42)
-      font.family: root.panelFontFamily
-      font.pixelSize: Style.font.caption
-    }
+    visible: root.service.hasMore
+    implicitHeight: Style.space(40)
 
     Button {
       anchors.right: parent.right
+      anchors.rightMargin: Style.space(8)
       anchors.verticalCenter: parent.verticalCenter
       visible: root.service.hasMore
-      text: root.service.listLoading ? "Loading…" : "Load more"
+      text: root.service.listLoading ? "Loading" : "Load more"
       foreground: root.textColor
       bordered: false
       fontSize: Style.font.caption

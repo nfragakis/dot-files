@@ -15,16 +15,32 @@ trap 'rm -rf "$work"' EXIT INT TERM HUP
 mkdir -p "$work/bin"
 cat > "$work/bin/curl" <<'STUB'
 #!/bin/sh
+[ -z "${CURL_STUB_COUNT:-}" ] || printf 'x\n' >> "$CURL_STUB_COUNT"
 header_file=
+saw_fail_early=0
 while [ "$#" -gt 0 ]; do
-  if [ "$1" = "--dump-header" ]; then
-    header_file=$2
-    shift 2
-  else
-    shift
-  fi
+  case "$1" in
+    --dump-header)
+      header_file=$2
+      shift 2
+      ;;
+    --fail-early)
+      saw_fail_early=1
+      shift
+      ;;
+    *)
+      shift
+      ;;
+  esac
 done
-if [ -n "${CURL_STUB_HEADER:-}" ] && [ -n "$header_file" ]; then
+if [ "${CURL_STUB_REQUIRE_FAIL_EARLY:-0}" = "1" ] && [ "$saw_fail_early" != "1" ]; then
+  cat >/dev/null
+  exit 99
+fi
+if [ -n "${CURL_STUB_STDOUT:-}" ]; then
+  cat >/dev/null
+  printf '%s' "$CURL_STUB_STDOUT"
+elif [ -n "${CURL_STUB_HEADER:-}" ] && [ -n "$header_file" ]; then
   printf '%s' "$CURL_STUB_HEADER" > "$header_file"
   cat >/dev/null
   printf '%s' "${CURL_STUB_BODY:-}"
@@ -128,6 +144,31 @@ else
   printf '  FAIL expected 2 url lines, found %s\n' "$sections"
   failures=$(( failures + 1 ))
 fi
+max_times=$(printf '%s' "$config" | grep -c '^max-time = 60$' || true)
+connect_timeouts=$(printf '%s' "$config" | grep -c '^connect-timeout = 20$' || true)
+if [ "$max_times" = "$sections" ] && [ "$connect_timeouts" = "$sections" ]; then
+  printf '  ok   every command section has its own deadlines\n'
+else
+  printf '  FAIL expected deadlines in all %s sections, found max-time=%s connect-timeout=%s\n' \
+    "$sections" "$max_times" "$connect_timeouts"
+  failures=$(( failures + 1 ))
+fi
+
+# curl otherwise reports only the final transfer's status after --next. A
+# failed earlier SEARCH window must stop the run instead of returning a short,
+# apparently successful result assembled from the remaining windows.
+partial_reply='* SEARCH 1 2 3'
+out=$(printf '%s\n' "$multi" \
+  | CURL_STUB_REQUIRE_FAIL_EARLY=1 CURL_STUB_STDOUT="$partial_reply" CURL_STUB_EXIT=21 \
+    PATH="$work/bin:$PATH" sh "$script")
+first=$(printf '%s\n' "$out" | sed -n '1p')
+decoded=$(printf '%s\n' "$out" | sed -n '2p' | base64 -d)
+if [ "$first" = "21" ] && [ "$decoded" = "$partial_reply" ]; then
+  printf '  ok   an earlier failed section cannot be hidden by a later success\n'
+else
+  printf '  FAIL expected fail-early status 21 with the partial SEARCH response\n'
+  failures=$(( failures + 1 ))
+fi
 
 # --------------------------------------------------------------- escaping
 #
@@ -180,6 +221,19 @@ check "the first recipient is set" "$config" 'mail-rcpt = "friend@example.com"'
 check "every recipient is set" "$config" 'mail-rcpt = "other@example.com"'
 check "the body is uploaded from a file, not passed as an argument" "$config" 'upload-file = "'
 check_absent "SMTP does not emit --next sections" "$config" 'next'
+check "SMTP keeps its transfer deadline" "$config" 'max-time = 60'
+check "SMTP keeps its connection deadline" "$config" 'connect-timeout = 20'
+
+# --------------------------------------------------------- IMAP draft upload
+
+append="imap-append $(b64 'imaps://imap.example.org:993/Drafts') $(b64 'jane:pw') $(b64 'Subject: saved draft
+
+body')"
+config=$(config_for "$append")
+check "a draft is appended to its resolved mailbox" "$config" 'url = "imaps://imap.example.org:993/Drafts"'
+check "a draft upload uses the RFC 5322 message file" "$config" 'upload-file = "'
+check "an IMAP upload carries the draft flag" "$config" 'upload-flags = "draft"'
+check_absent "an IMAP draft is not sent as a custom request" "$config" 'request = '
 
 # ------------------------------------------------------------- the framing
 
@@ -203,6 +257,45 @@ else
   printf '  FAIL expected 3 lines of output, got %s\n' "$lines"
   failures=$(( failures + 1 ))
 fi
+
+# ------------------------------------------------------------- retrying
+
+# Retrying is safe only before anything has been sent. curl's own --retry-all-
+# errors cannot tell a handshake that never opened a session from a transfer
+# the server already took, so an SMTP send it retried would deliver the message
+# twice. The retry is the script's own, on the pre-transfer exit codes.
+attempts_for() {
+  count="$work/attempts"
+  rm -f "$count"
+  printf '%s\n' "$1" \
+    | CURL_STUB_COUNT="$count" CURL_STUB_EXIT="$2" PATH="$work/bin:$PATH" sh "$script" \
+      >/dev/null 2>&1
+  if [ -f "$count" ]; then wc -l < "$count" | tr -d ' '; else printf '0'; fi
+}
+
+send_request="smtp $(b64 'smtp://smtp.example.org:587') $(b64 'j:p') $(b64 'j@example.org') $(b64 'Subject: x
+
+body') $(b64 'her@example.org')"
+read_request="imap $(b64 'imaps://a.example.org/INBOX') $(b64 'j:p') $(b64 'NOOP')"
+
+expect_attempts() {
+  got=$(attempts_for "$2" "$3")
+  if [ "$got" = "$4" ]; then
+    printf '  ok   %s\n' "$1"
+  else
+    printf '  FAIL %s: expected %s attempt(s), got %s\n' "$1" "$4" "$got"
+    failures=$(( failures + 1 ))
+  fi
+}
+
+expect_attempts "a dropped TLS handshake is tried again" "$read_request" 35 3
+expect_attempts "a name that does not resolve is tried again" "$read_request" 6 3
+expect_attempts "a rejected password is not tried again" "$read_request" 67 1
+# The one that matters: 56 is a receive error, which happens after the message
+# has been handed over. Sending it a second time is a second copy delivered.
+expect_attempts "a send that failed mid-transfer is not repeated" "$send_request" 56 1
+expect_attempts "a send that timed out is not repeated" "$send_request" 28 1
+expect_attempts "a send is still retried before it has left" "$send_request" 7 3
 
 # A malformed request must fail rather than run curl with something guessed.
 if printf 'not-base64-at-all\n' | PATH="$work/bin:$PATH" sh "$script" >/dev/null 2>&1; then

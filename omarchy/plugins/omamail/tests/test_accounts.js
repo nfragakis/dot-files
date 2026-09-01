@@ -86,15 +86,6 @@ assert.strictEqual(corrected.accounts[0].label, "Work")
 assert.strictEqual(corrected.accounts[1].id, "bob@example.com")
 assert.strictEqual(corrected.activeId, "ada@example.com")
 
-// Gmail category tabs are an account preference, not a property of Gmail as a
-// whole. A Workspace mailbox without tabs can therefore use the real Inbox
-// while personal accounts keep Primary, and that distinction must survive the
-// account file round trip.
-let customInbox = accounts.add(accounts.emptyList(), account("work@example.com", {
-  inboxQuery: "  in:inbox  "
-}))
-assert.strictEqual(customInbox.accounts[0].inboxQuery, "in:inbox")
-
 // ----------------------------------------------------------------- pending
 //
 // An account is created before the sign-in that reveals its address, so it
@@ -131,8 +122,28 @@ assert.strictEqual(accounts.count(settled), 3)
 
 let three = accounts.add(corrected, account("cid@example.com"))
 assert.strictEqual(accounts.count(three), 3)
-
 const beforeRemove = frozen(three)
+
+// Removing an account is destructive and happens in two steps. The first
+// step only describes the target; it never mutates the list. A stale target
+// is rejected when the confirmation is finally accepted.
+const removal = accounts.removalRequest(three, 0)
+deepEqual(removal, {
+  id: "ada@example.com",
+  email: "ADA@example.com",
+  index: 0
+})
+assert.strictEqual(frozen(three), beforeRemove)
+assert.strictEqual(accounts.removalRequest(three, -1), null)
+assert.strictEqual(accounts.removalRequest(three, 99), null)
+assert.strictEqual(accounts.removalRequest(one, 0), null,
+  "the only account cannot be removed")
+assert.strictEqual(accounts.removalRequest(bothPending, 1), null,
+  "a draft has no stable identity and is canceled rather than removed")
+assert.strictEqual(accounts.confirmRemoval(three, { id: "gone@example.com", index: 0 }), -1,
+  "confirmation must not remove whichever account later occupies a stale row")
+assert.strictEqual(accounts.confirmRemoval(three, removal), 0)
+
 let withoutBob = accounts.remove(three, "bob@example.com")
 assert.strictEqual(frozen(three), beforeRemove, "remove leaves its input alone")
 assert.strictEqual(accounts.count(withoutBob), 2)
@@ -178,15 +189,6 @@ deepEqual(accounts.setActive(three, "nobody@example.com"), three)
 deepEqual(accounts.setActive(three, ""), three)
 deepEqual(accounts.setActive(realAndPending, ""), realAndPending)
 
-assert.strictEqual(accounts.adjacentId(three, "ada@example.com", 1), "bob@example.com")
-assert.strictEqual(accounts.adjacentId(three, "ada@example.com", -1), "cid@example.com",
-  "cycling backward wraps to the last account")
-assert.strictEqual(accounts.adjacentId(three, "cid@example.com", 1), "ada@example.com",
-  "cycling forward wraps to the first account")
-assert.strictEqual(accounts.adjacentId(realAndPending, "ada@example.com", 1), "ada@example.com",
-  "pending setup rows are skipped")
-assert.strictEqual(accounts.adjacentId(accounts.emptyList(), "", 1), "")
-
 // ------------------------------------------------------------------- load
 
 deepEqual(accounts.load(""), accounts.emptyList())
@@ -194,6 +196,14 @@ deepEqual(accounts.load("{not json"), accounts.emptyList())
 deepEqual(accounts.load("[]"), accounts.emptyList(), "an array is not a list of accounts")
 deepEqual(accounts.load("null"), accounts.emptyList())
 deepEqual(accounts.load(null), accounts.emptyList())
+assert.strictEqual(accounts.isSerializedList(""), false)
+assert.strictEqual(accounts.isSerializedList("{not json"), false)
+assert.strictEqual(accounts.isSerializedList(JSON.stringify({
+  version: accounts.VERSION, accounts: []
+})), true, "a real empty first-run file is distinguishable from a failed read")
+assert.strictEqual(accounts.isSerializedList(JSON.stringify({
+  version: accounts.VERSION + 1, accounts: []
+})), false, "a newer format must not be mistaken for this build's list")
 deepEqual(accounts.load(JSON.stringify({ accounts: [] })), accounts.emptyList(), "no version at all")
 deepEqual(accounts.load(JSON.stringify({
   version: accounts.VERSION + 99,
@@ -235,7 +245,6 @@ assert.strictEqual(messy.activeId, "bob@example.com")
 let saved = accounts.emptyList()
 saved = accounts.add(saved, account("ada@example.com", { label: "工作邮箱" }))
 saved = accounts.add(saved, account("bob@example.com", { label: "Personal" }))
-saved = accounts.add(saved, account("work@example.com", { inboxQuery: "in:inbox" }))
 saved = accounts.add(saved, account("", { clientId: "cid5" }))
 saved = accounts.setActive(saved, "bob@example.com")
 
@@ -248,9 +257,8 @@ assert.strictEqual(accounts.serialize(accounts.emptyList()).indexOf("\n"), -1)
 const reloaded = accounts.load(text)
 deepEqual(reloaded, saved, "order, ids and the selection all survive")
 assert.strictEqual(reloaded.activeId, "bob@example.com")
-assert.strictEqual(accounts.find(reloaded, "work@example.com").inboxQuery, "in:inbox")
 assert.strictEqual(accounts.label(reloaded.accounts[0]), "工作邮箱", "non-ASCII labels survive")
-assert.strictEqual(accounts.count(reloaded), 4)
+assert.strictEqual(accounts.count(reloaded), 3)
 
 // A label with a newline in it is still one line on disk.
 const multiline = accounts.serialize(accounts.add(accounts.emptyList(), account("ada@example.com", { label: "a\nb" })))
@@ -346,7 +354,8 @@ assert.strictEqual(accounts.count(accounts.discardDraftAt(pendingList, 0)), 3)
     imap: {
       imapHost: "imap.fastmail.com", imapPort: 993,
       smtpHost: "smtp.fastmail.com", smtpPort: 465,
-      username: "jane@fastmail.com"
+      username: "jane@fastmail.com",
+      aliases: "alias@fastmail.com (default), work@domain.com"
     }
   }))
   const reloaded = accounts.find(accounts.load(saved), "imap:jane@fastmail.com")
@@ -354,6 +363,10 @@ assert.strictEqual(accounts.count(accounts.discardDraftAt(pendingList, 0)), 3)
   assert.strictEqual(reloaded.imap.imapHost, "imap.fastmail.com")
   assert.strictEqual(reloaded.imap.smtpPort, 465)
   assert.strictEqual(reloaded.imap.username, "jane@fastmail.com")
+  assert.strictEqual(reloaded.imap.aliases.length, 2)
+  assert.strictEqual(reloaded.imap.aliases[0].email, "alias@fastmail.com")
+  assert.strictEqual(reloaded.imap.aliases[0].isDefault, true)
+  assert.strictEqual(reloaded.imap.aliases[1].isDefault, false)
   assert.strictEqual(reloaded.imap.insecure, false)
 
   // Ports out of range fall back rather than reaching a URL.

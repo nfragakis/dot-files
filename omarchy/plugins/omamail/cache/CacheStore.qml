@@ -50,11 +50,6 @@ Item {
     scheduleSave()
   }
 
-  function putNotificationState(primed, seenIds) {
-    store = Cache.putNotificationState(store, primed, seenIds)
-    scheduleSave()
-  }
-
   // Called once the mailbox address is known. A cache belongs to one mailbox,
   // so a different address starts from nothing rather than showing one
   // account's mail under another's name.

@@ -1,5 +1,7 @@
 .pragma library
 
+.import "Direction.js" as Direction
+
 // Everything that turns a Gmail API message resource into something a row or a
 // reader can show. Two things force real work here rather than a few property
 // reads:
@@ -462,6 +464,12 @@ function formatSize(bytes) {
   return (value / (1024 * 1024)).toFixed(value < 10485760 ? 1 : 0) + " MB"
 }
 
+function formatCount(count, singular) {
+  var amount = Math.max(0, Math.floor(Number(count) || 0))
+  var noun = String(singular || "item")
+  return amount + " " + noun + (amount === 1 ? "" : "s")
+}
+
 // ------------------------------------------------------ RFC 822 → payload
 //
 // Gmail hands back a message already taken apart: a headers array, a MIME
@@ -763,6 +771,8 @@ function summarize(message, now) {
     messageId: headerValue(message, "Message-ID"),
     to: parseAddressList(headerValue(message, "To")),
     cc: parseAddressList(headerValue(message, "Cc")),
+    bcc: parseAddressList(headerValue(message, "Bcc")),
+    inReplyTo: headerValue(message, "In-Reply-To"),
     subject: subject || "(no subject)",
     snippet: decodeSnippet(message && message.snippet),
     date: date,
@@ -776,6 +786,34 @@ function summarize(message, now) {
     isDraft: hasLabel(message, "DRAFT"),
     labelIds: labelIds(message).slice(),
     sizeEstimate: Math.max(0, Math.floor(Number(message && message.sizeEstimate) || 0))
+  }
+}
+
+function draftAddressText(addresses) {
+  var list = Array.isArray(addresses) ? addresses : []
+  var out = []
+  for (var i = 0; i < list.length; i++) {
+    var email = String(list[i] && list[i].email ? list[i].email : "").trim()
+    if (email !== "") out.push(email)
+  }
+  return out.join(", ")
+}
+
+// A full draft read has the same provider-neutral summary and body as any
+// message. Compose needs the addresses as editable text rather than row data.
+function draftFields(summary, body) {
+  var source = summary || ({})
+  var subject = String(source.subject || "")
+  return {
+    mode: "draft",
+    from: String(source.from && source.from.email ? source.from.email : ""),
+    to: draftAddressText(source.to),
+    cc: draftAddressText(source.cc),
+    bcc: draftAddressText(source.bcc),
+    subject: subject === "(no subject)" ? "" : subject,
+    body: String(body || ""),
+    threadId: String(source.threadId || ""),
+    inReplyTo: String(source.inReplyTo || "")
   }
 }
 
@@ -805,10 +843,22 @@ function encodedPhrase(text) {
 // Written by hand rather than through `foldHeader` for the reason above. The
 // address still loses its line breaks, so a display name cannot smuggle a
 // second header in either.
-function fromHeader(email, displayName) {
+// One address as a header *value*: `"Name" <a@b.com>`, or the bare address when
+// there is no name to put in front of it.
+//
+// Split out from `fromHeader` because a provider composing a message rather
+// than parsing one needs the value without a field name — HEY's client builds a
+// To line this way, and pasting `fromHeader`'s output into one produced
+// `To: From: "Name" <a@b.com>`, which `parseAddress` then read as a display
+// name of `From: "Name"`.
+function addressHeader(email, displayName) {
   var address = headerSafe(email).trim()
   var phrase = encodedPhrase(displayName)
-  return "From: " + (phrase === "" ? address : phrase + " <" + address + ">")
+  return phrase === "" ? address : phrase + " <" + address + ">"
+}
+
+function fromHeader(email, displayName) {
+  return "From: " + addressHeader(email, displayName)
 }
 
 function foldHeader(name, value) {
@@ -855,6 +905,24 @@ function base64Body(text) {
   return wrapped.join("\r\n")
 }
 
+// Provider attachment bodies are base64url. MIME uses standard base64, but
+// changing alphabets does not require decoding the binary file through a text
+// string. Doing that would corrupt every byte sequence that is not UTF-8.
+function mimeBase64(data) {
+  var encoded = String(data || "").replace(/[\r\n\s]/g, "")
+    .replace(/-/g, "+").replace(/_/g, "/")
+  while (encoded.length % 4 !== 0) encoded += "="
+  var wrapped = []
+  for (var i = 0; i < encoded.length; i += 76) wrapped.push(encoded.substr(i, 76))
+  return wrapped.join("\r\n")
+}
+
+function attachmentType(value) {
+  var type = String(value || "").split(";")[0].trim().toLowerCase()
+  return /^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/.test(type)
+    ? type : "application/octet-stream"
+}
+
 // The separator only has to be a string the parts do not contain, and every
 // part here is base64 — an alphabet with no "_" in it, so a boundary carrying
 // one cannot occur inside a body however long it is. The caller may name it,
@@ -873,12 +941,86 @@ function calendarMethod(value) {
   return text === "" ? "REPLY" : text.substring(0, 20)
 }
 
+// Which way a message being sent runs.
+//
+// Qt resolves a compose field from the text already in it, so a writer sees
+// their own paragraph against the right edge as they type it — but none of
+// that travels with the message. A `text/plain` part states no direction at
+// all, and a client with nothing to read falls back to left-to-right, which is
+// why a Persian mail written here arrives in Gmail against the wrong edge.
+//
+// Read off the body by the same rule the reader uses, so a message arrives
+// looking the way it looked while it was written.
+function outgoingDirection(body) {
+  return Direction.resolve(body, Direction.AUTO)
+}
+
+// The body again as the least markup that can carry a direction: the text
+// escaped, its line breaks kept, and `dir` on the element every client reads
+// it from. Not a rendering of the message — a statement about it, which is why
+// nothing here styles anything. A recipient who prefers plain text still has
+// the plain part, unchanged and listed first.
+function directionalHtmlBody(text, direction) {
+  var body = String(text === undefined || text === null ? "" : text)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\r\n/g, "\n")
+    .replace(/\n/g, "<br>\n")
+  return "<html><body dir=\"" + direction + "\">" + body + "</body></html>"
+}
+
+// A nested boundary the enclosing one cannot be mistaken for. `splitMultipart`
+// finds a delimiter by searching for "--" + boundary anywhere in the body, so
+// an inner boundary that began with the outer one would be found by the outer
+// scan too and the message would come apart at the wrong line. A prefix cannot
+// collide that way; a suffix can.
+function nestedBoundary(outer) {
+  return mimeBoundary("alt_" + String(outer || ""))
+}
+
+// The body as a part of its own: the plain text alone, or the plain text and
+// an HTML twin stating the direction when there is one worth stating. Written
+// once because the shape has to be the same whether the body stands as the
+// whole message or as the first part of a `multipart/mixed`.
+//
+// Stated only when the message runs right to left. Left to right is what a
+// bare `text/plain` already means to every client, so saying it would add an
+// HTML part to every message ever sent in order to repeat the default — the
+// same reason `Html.js` gives a document no `dir` when nothing chose one.
+function pushBodyPart(lines, body, direction, boundary) {
+  if (!Direction.isRightToLeft(direction)) {
+    lines.push("Content-Type: text/plain; charset=UTF-8")
+    lines.push("Content-Transfer-Encoding: base64")
+    lines.push("")
+    lines.push(base64Body(body))
+    return
+  }
+  // Least preferred first: a client that shows only one alternative should
+  // show the last it understands, and the HTML twin is the one that carries
+  // the direction.
+  lines.push("Content-Type: multipart/alternative; boundary=\"" + boundary + "\"")
+  lines.push("")
+  lines.push("--" + boundary)
+  lines.push("Content-Type: text/plain; charset=UTF-8")
+  lines.push("Content-Transfer-Encoding: base64")
+  lines.push("")
+  lines.push(base64Body(body))
+  lines.push("--" + boundary)
+  lines.push("Content-Type: text/html; charset=UTF-8")
+  lines.push("Content-Transfer-Encoding: base64")
+  lines.push("")
+  lines.push(base64Body(directionalHtmlBody(body, direction)))
+  lines.push("--" + boundary + "--")
+}
+
 function buildRawMessage(fields) {
   var values = fields || {}
   var lines = []
   if (values.from) lines.push(fromHeader(values.from, values.fromName))
   lines.push(foldHeader("To", values.to || ""))
   if (values.cc) lines.push(foldHeader("Cc", values.cc))
+  if (values.bcc) lines.push(foldHeader("Bcc", values.bcc))
   lines.push(foldHeader("Subject", values.subject || ""))
   var inReplyTo = referenceValue(values.inReplyTo)
   if (inReplyTo) {
@@ -889,17 +1031,52 @@ function buildRawMessage(fields) {
 
   var calendar = values.calendar && String(values.calendar.text || "") !== ""
     ? values.calendar : null
-  if (!calendar) {
-    lines.push("Content-Type: text/plain; charset=UTF-8")
-    lines.push("Content-Transfer-Encoding: base64")
+  var attachments = Array.isArray(values.attachments) ? values.attachments : []
+  var included = []
+  for (var attachmentIndex = 0; attachmentIndex < attachments.length; attachmentIndex++) {
+    var attachment = attachments[attachmentIndex] || ({})
+    if (attachment.data === undefined || attachment.data === null) continue
+    included.push(attachment)
+  }
+
+  // Resolved once, here, so a message and the draft it was saved as cannot
+  // disagree about which way the same words run.
+  var direction = outgoingDirection(values.body)
+
+  if (!calendar && included.length === 0) {
+    pushBodyPart(lines, values.body, direction, mimeBoundary(values.boundary))
+    return lines.join("\r\n") + "\r\n"
+  }
+
+  if (included.length > 0) {
+    var mixedBoundary = mimeBoundary(values.boundary)
+    lines.push("Content-Type: multipart/mixed; boundary=\"" + mixedBoundary + "\"")
     lines.push("")
-    return lines.join("\r\n") + "\r\n" + base64Body(values.body) + "\r\n"
+    lines.push("--" + mixedBoundary)
+    pushBodyPart(lines, values.body, direction, nestedBoundary(mixedBoundary))
+    for (var includedIndex = 0; includedIndex < included.length; includedIndex++) {
+      var file = included[includedIndex]
+      var filename = String(file.filename || "attachment")
+      lines.push("--" + mixedBoundary)
+      lines.push("Content-Type: " + attachmentType(file.mimeType)
+        + "; name=" + encodedPhrase(filename))
+      lines.push("Content-Transfer-Encoding: base64")
+      lines.push("Content-Disposition: attachment; filename=" + encodedPhrase(filename))
+      lines.push("")
+      lines.push(mimeBase64(file.data))
+    }
+    lines.push("--" + mixedBoundary + "--")
+    return lines.join("\r\n") + "\r\n"
   }
 
   // `multipart/alternative`, not `mixed`: the calendar part and the sentence
   // beside it are two readings of one answer, and a client that understands
   // the first should not also show the second as a file to open. It is also
-  // the shape every calendar server recognises a reply in.
+  // the shape every calendar server recognises a reply in — and the reason no
+  // HTML twin joins it the way one joins an ordinary body. An RSVP's sentence
+  // is generated rather than composed, so there is no writer's direction to
+  // carry, and a third alternative is a shape some of those servers do not
+  // expect.
   var boundary = mimeBoundary(values.boundary)
   lines.push("Content-Type: multipart/alternative; boundary=\"" + boundary + "\"")
   lines.push("")
@@ -921,5 +1098,12 @@ function buildRawMessage(fields) {
 function buildSendPayload(fields) {
   var payload = { raw: encodeBase64Url(buildRawMessage(fields)) }
   if (fields && fields.threadId) payload.threadId = String(fields.threadId)
+  var files = Array.isArray(fields && fields.attachments) ? fields.attachments : []
+  var paths = []
+  for (var i = 0; i < files.length; i++) {
+    if (files[i] && files[i].path)
+      paths.push({ path: String(files[i].path), filename: String(files[i].filename || "") })
+  }
+  if (paths.length > 0) payload.attachments = paths
   return payload
 }

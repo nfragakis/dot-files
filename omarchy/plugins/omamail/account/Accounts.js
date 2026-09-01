@@ -1,5 +1,7 @@
 .pragma library
 
+.import "Aliases.js" as Aliases
+
 // The list of Gmail accounts and which one the window is showing. One account
 // was the original design; several is a list plus a selection, and every rule
 // about what that selection may point at lives here so the QML only has to
@@ -37,6 +39,16 @@ function parseJson(text, fallback) {
   }
 }
 
+// Whether text is an accounts file rather than a failed or half-finished read.
+// `load` deliberately turns either into an empty list for first run; a service
+// that already has accounts needs the distinction so a transient FileView
+// failure cannot replace them with the first-run placeholder.
+function isSerializedList(text) {
+  var raw = parseJson(text, null)
+  return isObject(raw) && Number(raw.version) === VERSION
+    && Array.isArray(raw.accounts)
+}
+
 function isValidEmail(value) {
   return EMAIL_PATTERN.test(trimmed(value))
 }
@@ -65,7 +77,7 @@ function accountId(email, provider) {
 // anything written before providers existed — is Gmail: that is what every
 // account in an upgraded install actually is, and defaulting to it is what
 // stops an upgrade from presenting a working mailbox as unconfigured.
-var PROVIDERS = ["gmail", "imap", "hey"]
+var PROVIDERS = ["gmail", "hey", "imap"]
 var DEFAULT_PROVIDER = "gmail"
 
 function normalizeProvider(value) {
@@ -100,6 +112,7 @@ function makeImapSettings(raw) {
     smtpHost: trimmed(values.smtpHost),
     smtpPort: portOr(values.smtpPort, 465),
     username: trimmed(values.username),
+    aliases: Aliases.parse(values.aliases),
     insecure: values.insecure === true
   }
 }
@@ -120,11 +133,7 @@ function makeAccount(account) {
     clientId: trimmed(raw.clientId),
     clientSecret: trimmed(raw.clientSecret),
     imap: makeImapSettings(raw.imap),
-    label: trimmed(raw.label),
-    // Optional because Gmail categories are configured per mailbox. Personal
-    // accounts can use Primary while a Workspace account without category
-    // tabs uses the Inbox label itself.
-    inboxQuery: trimmed(raw.inboxQuery)
+    label: trimmed(raw.label)
   }
 }
 
@@ -244,6 +253,29 @@ function removeAt(list, index) {
   return source
 }
 
+// The request is an immutable description of the row the user saw. Keeping
+// both its id and position lets confirmation reject a stale request instead of
+// deleting whichever account later moved into the same row.
+function removalRequest(list, index) {
+  var values = Array.isArray((list || {}).accounts) ? list.accounts : []
+  if (values.length <= 1) return null
+  var at = Math.floor(Number(index))
+  if (!isFinite(at) || at < 0 || at >= values.length) return null
+  var entry = values[at] || {}
+  if (!entry.id) return null
+  return { id: String(entry.id || ""), email: String(entry.email || ""), index: at }
+}
+
+function confirmRemoval(list, request) {
+  if (!request) return -1
+  var values = Array.isArray((list || {}).accounts) ? list.accounts : []
+  var at = Math.floor(Number(request.index))
+  if (!isFinite(at) || at < 0 || at >= values.length) return -1
+  var entry = values[at] || {}
+  var id = String(request.id || "")
+  return id !== "" && String(entry.id || "") === id ? at : -1
+}
+
 function discardDraftAt(list, index) {
   var source = copyList(list)
   var at = Math.floor(Number(index))
@@ -259,24 +291,6 @@ function setActive(list, id) {
   return next
 }
 
-// The next real account in display order. Pending rows are setup state rather
-// than mailboxes and cycling must skip them; the ends wrap because Ctrl+Tab is
-// a repeated switch, not navigation into a dead end.
-function adjacentId(list, id, delta) {
-  var source = copyList(list)
-  var count = source.accounts.length
-  if (count === 0) return ""
-  var at = indexOfId(source.accounts, id)
-  if (at < 0) at = 0
-  var step = Number(delta) < 0 ? -1 : 1
-  for (var offset = 1; offset <= count; offset++) {
-    var next = ((at + step * offset) % count + count) % count
-    if (source.accounts[next] && source.accounts[next].id)
-      return source.accounts[next].id
-  }
-  return ""
-}
-
 // ------------------------------------------------------------ persistence
 
 // Anything unreadable becomes an empty list rather than an error. A user with
@@ -284,8 +298,7 @@ function adjacentId(list, id, delta) {
 // failure leaves them with nothing to do it from.
 function load(text) {
   var raw = parseJson(text, null)
-  if (!isObject(raw)) return emptyList()
-  if (Number(raw.version) !== VERSION) return emptyList()
+  if (!isSerializedList(text)) return emptyList()
 
   var next = emptyList()
   var entries = Array.isArray(raw.accounts) ? raw.accounts : []

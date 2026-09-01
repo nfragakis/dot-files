@@ -158,6 +158,34 @@ assert.strictEqual(message.htmlToText("<style>p{}</style>text"), "text")
 assert.strictEqual(message.formatSize(512), "512 B")
 assert.strictEqual(message.formatSize(2048), "2.0 KB")
 assert.strictEqual(message.formatSize(2 * 1024 * 1024), "2.0 MB")
+assert.strictEqual(message.formatCount(1, "original attachment"), "1 original attachment")
+assert.strictEqual(message.formatCount(2, "original attachment"), "2 original attachments")
+
+// A forwarded file is a real MIME attachment, not only a label in the draft.
+// Its provider data is already base64url, including arbitrary binary bytes.
+const forwardRaw = message.buildRawMessage({
+  from: "me@example.com",
+  to: "you@example.com",
+  subject: "Fwd: report",
+  body: "See the original file.",
+  boundary: "=_forward_test",
+  attachments: [{
+    filename: "report.pdf",
+    mimeType: "application/pdf",
+    size: 4,
+    data: "AP_-AQ"
+  }]
+})
+assert.ok(forwardRaw.includes('Content-Type: multipart/mixed; boundary="=_forward_test"'))
+assert.ok(forwardRaw.includes('Content-Disposition: attachment; filename="report.pdf"'))
+assert.ok(forwardRaw.includes("AP/+AQ=="), "attachment bytes remain intact")
+assert.strictEqual(message.attachments(message.parseRfc822(forwardRaw))[0].filename,
+  "report.pdf")
+const emptyForward = message.buildRawMessage({
+  to: "you@example.com", body: "Empty file attached", boundary: "=_empty_test",
+  attachments: [{ filename: "empty.txt", mimeType: "text/plain", size: 0, data: "" }]
+})
+assert.ok(emptyForward.includes('filename="empty.txt"'), "a zero-byte attachment is still attached")
 
 // -------------------------------------------------------------------- time
 
@@ -197,7 +225,9 @@ const resource = {
       { name: "From", value: "=?UTF-8?B?" + Buffer.from("李四", "utf8").toString("base64") + "?= <li@example.com>" },
       { name: "To", value: "me@example.com" },
       { name: "Cc", value: "team@example.com, work@example.net" },
+      { name: "Bcc", value: "hidden@example.org" },
       { name: "Subject", value: "  Invoice   for   August  " },
+      { name: "In-Reply-To", value: "<earlier@example.net>" },
       { name: "Date", value: "Wed, 19 Aug 2026 14:50:00 +0000" }
     ]
   }
@@ -211,7 +241,11 @@ assert.strictEqual(summary.from.email, "li@example.com")
 assert.strictEqual(summary.subject, "Invoice for August", "runs of whitespace collapse")
 assert.strictEqual(summary.cc.length, 2, "Cc is carried: a reply picks its alias out of it")
 assert.strictEqual(summary.cc[1].email, "work@example.net")
+deepEqual(summary.bcc || [], [{ name: "hidden", email: "hidden@example.org",
+  display: "hidden" }], "Bcc is carried when a stored draft is reopened")
+assert.strictEqual(summary.inReplyTo, "<earlier@example.net>")
 assert.strictEqual(message.summarize({ payload: { headers: [] } }, now).cc.length, 0)
+assert.strictEqual(message.summarize({ payload: { headers: [] } }, now).bcc.length, 0)
 assert.strictEqual(summary.snippet, "Your receipt is attached & ready")
 assert.strictEqual(summary.time, "10m")
 assert.strictEqual(summary.unread, true)
@@ -246,6 +280,29 @@ const withReplyTo = message.summarize({
 }, now)
 assert.strictEqual(withReplyTo.replyTo.email, "help@example.com")
 assert.strictEqual(withReplyTo.messageId, "<abc@mail.example.com>")
+
+assert.strictEqual(typeof message.draftFields, "function",
+  "stored messages need one provider-neutral path back into compose")
+deepEqual(message.draftFields({
+  from: { email: "me@example.com" },
+  to: [{ email: "first@example.com" }, { email: "second@example.com" }],
+  cc: [{ email: "copy@example.com" }],
+  bcc: [{ email: "hidden@example.com" }],
+  subject: "Saved subject",
+  threadId: "thread-7",
+  inReplyTo: "<earlier@example.com>"
+}, "Saved body"), {
+  mode: "draft",
+  from: "me@example.com",
+  to: "first@example.com, second@example.com",
+  cc: "copy@example.com",
+  bcc: "hidden@example.com",
+  subject: "Saved subject",
+  body: "Saved body",
+  threadId: "thread-7",
+  inReplyTo: "<earlier@example.com>"
+})
+assert.strictEqual(message.draftFields({ subject: "(no subject)" }, "").subject, "")
 
 // ------------------------------------------------------------ composition
 
@@ -282,6 +339,10 @@ assert.ok(message.buildRawMessage({
   from: "work@example.net", fromName: "   ", to: "jane@example.com"
 }).indexOf("From: work@example.net\r\n") === 0, "an empty name leaves a bare address")
 assert.ok(raw.indexOf("To: jane@example.com\r\n") >= 0)
+assert.ok(message.buildRawMessage({
+  to: "jane@example.com", bcc: "hidden@example.com", body: "x"
+}).indexOf("Bcc: hidden@example.com\r\n") >= 0,
+  "a mailto bcc has to leave as a Bcc header or it is not blind")
 // A non-ASCII subject has to go back out as an encoded word or Gmail rejects
 // the whole raw message.
 assert.ok(raw.indexOf("Subject: =?UTF-8?B?" + Buffer.from("你好", "utf8").toString("base64") + "?=") >= 0)
@@ -300,6 +361,87 @@ assert.strictEqual(payload.threadId, "t1")
 assert.strictEqual(
   Buffer.from(payload.raw, "base64url").toString("utf8").indexOf("To: a@b.com"), 0)
 assert.strictEqual(message.buildSendPayload({ to: "a@b.com" }).threadId, undefined)
+
+// ------------------------------------------- the direction a message states
+//
+// The compose field is resolved by Qt from the text in it, so the writer sees
+// their own paragraph the right way round. None of that leaves with the
+// message: a `text/plain` part states no direction, and a client with nothing
+// to read assumes left-to-right. An HTML twin beside the plain text is the
+// only thing every client honours, so a right-to-left message grows one.
+{
+  const persian = "سلام، عرض ادب\n\nبا تشکر"
+  const raw = message.buildRawMessage({
+    to: "you@example.com", subject: "سلام", body: persian, boundary: "FABOUND"
+  })
+
+  const parsed = message.parseRfc822(raw)
+  assert.strictEqual(parsed.mimeType, "multipart/alternative")
+  assert.strictEqual(parsed.parts.length, 2)
+  // Least preferred first: a client showing one alternative shows the last it
+  // understands, and the twin is the part carrying the direction.
+  assert.strictEqual(parsed.parts[0].mimeType, "text/plain")
+  assert.strictEqual(message.decodePart(parsed.parts[0]), persian,
+    "the plain part is the message as written, unchanged")
+  assert.strictEqual(parsed.parts[1].mimeType, "text/html")
+  assert.ok(message.decodePart(parsed.parts[1]).indexOf('<body dir="rtl">') > 0)
+
+  // Line breaks are what a plain body says with, so they have to survive the
+  // crossing into markup.
+  assert.ok(message.decodePart(parsed.parts[1]).indexOf("<br>") > 0)
+
+  // The body is a person's typing, not markup, and may not become markup on
+  // the way out.
+  const escaped = message.parseRfc822(message.buildRawMessage({
+    to: "a@b.com", body: "سلام <b>&x</b>", boundary: "ESCB"
+  }))
+  assert.strictEqual(message.decodePart(escaped.parts[1]),
+    '<html><body dir="rtl">سلام &lt;b&gt;&amp;x&lt;/b&gt;</body></html>')
+
+  // Left-to-right is what a bare text/plain already means, so saying it would
+  // make every message ever sent multipart in order to repeat the default.
+  const latin = message.buildRawMessage({ to: "a@b.com", body: "Hi Jane,\n\nThanks!" })
+  assert.ok(latin.indexOf("Content-Type: text/plain; charset=UTF-8") > 0)
+  assert.ok(latin.indexOf("multipart") < 0,
+    "a left-to-right message keeps the shape it has always had")
+
+  // A forced setting is not consulted here: the direction is read off the body
+  // by the same rule the reader uses, so what arrives matches what was typed.
+  assert.ok(message.buildRawMessage({
+    to: "a@b.com", body: "Hello سلام"
+  }).indexOf("multipart") < 0, "first strong character decides, as it does everywhere")
+
+  // An Arabic-Indic number is not a strong character, so an English message
+  // that opens with a price or a date pasted out of one does not become a
+  // right-to-left message on the way out. It did: the digits sit inside the
+  // Arabic block, and the scan asked which block before it asked which class.
+  assert.ok(message.buildRawMessage({
+    to: "a@b.com", body: "١٢٣ Smith Street\nThe report is attached."
+  }).indexOf("multipart") < 0,
+    "an English body opening with an Arabic-Indic number stays plain text")
+
+  // With an attachment the pair moves one level in. The inner boundary may not
+  // begin with the outer one: `splitMultipart` finds a delimiter by searching
+  // for "--" + boundary anywhere in the body, so a suffixed inner boundary
+  // would be found by the outer scan too and the message would come apart at
+  // the wrong line.
+  const attached = message.buildRawMessage({
+    to: "a@b.com", body: "سلام دوست من", boundary: "OUTER",
+    attachments: [{ filename: "f.txt", mimeType: "text/plain", data: "aGk=" }]
+  })
+  const withFile = message.parseRfc822(attached)
+  assert.strictEqual(withFile.mimeType, "multipart/mixed")
+  assert.strictEqual(withFile.parts.length, 2)
+  assert.strictEqual(withFile.parts[0].mimeType, "multipart/alternative")
+  assert.strictEqual(withFile.parts[0].parts.length, 2)
+  assert.strictEqual(withFile.parts[0].parts[0].mimeType, "text/plain")
+  assert.strictEqual(withFile.parts[0].parts[1].mimeType, "text/html")
+  assert.strictEqual(message.decodePart(withFile.parts[1]), "hi",
+    "the attachment survives the extra nesting")
+  const inner = attached.match(/boundary="(alt_[^"]+)"/)[1]
+  assert.ok(("--" + inner).indexOf("--OUTER") < 0,
+    "the inner delimiter cannot be read as the outer one")
+}
 
 // ------------------------------------------------------------- a calendar
 //
@@ -657,5 +799,17 @@ assert.strictEqual(message.extractHtml({
   deepEqual(message.extractBody(message.parseRfc822("")), { text: "", source: "" })
   deepEqual(message.attachments(message.parseRfc822("")), [])
 }
+
+// A header value is not a header line. `fromHeader` writes the whole `From:`
+// field; a provider composing a `To:` needs the address on its own, and pasting
+// one into the other produced `To: From: "Name" <a@b.com>` — which parses back
+// as a display name of `From: "Name"`.
+assert.strictEqual(message.addressHeader("jane@example.com", "Jane Roe"),
+  '"Jane Roe" <jane@example.com>')
+assert.strictEqual(message.addressHeader("jane@example.com", ""), "jane@example.com")
+assert.strictEqual(message.fromHeader("jane@example.com", "Jane Roe"),
+  'From: "Jane Roe" <jane@example.com>')
+assert.strictEqual(message.parseAddress(message.addressHeader("jane@example.com", "Jane Roe")).name,
+  "Jane Roe", "what is written comes back")
 
 console.log("test_message.js ok")
