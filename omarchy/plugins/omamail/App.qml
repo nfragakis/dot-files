@@ -505,7 +505,16 @@ Item {
     onTriggered: root.draftSavedNotice = ""
   }
 
-  // Acting on the open message closes it: it is about to leave this list.
+  function markCurrentUnread() {
+    if (!service) return false
+    var messageId = Model.currentMessageId(currentView,
+      service.selectedId, cursorId)
+    if (messageId === "") return false
+    return service.act(messageId, "markUnread")
+  }
+
+  // Trash returns to the unselected list. Other removing actions leave the
+  // reader blank until the user explicitly opens the neighbouring row.
   function actOnCursor(action) {
     if (!service || cursorId === "") return false
     var acted = cursorId
@@ -514,17 +523,19 @@ Item {
     var next = Model.cursorAfterRemoval(service.messages, acted)
     var leaves = !Model.survivesAction(service.mailboxKey, action)
     if (!service.act(acted, action)) return false
+    if (Model.returnsToListAfterAction(action)) {
+      if (leaves) cursorId = next
+      backToList()
+      if (leaves) revealCursorRow()
+      return true
+    }
     if (!leaves) return true
     // The row is going and the cursor must not go with it: a cursor on a
     // message that is no longer listed cannot be found, so the next j restarts
     // at the top. Archiving one message used to send it back to the first row.
-    if (wasOpen) {
-      if (next !== "") openMessage(next)
-      else backToList()
-      return true
-    }
     cursorId = next
     revealCursorRow()
+    if (wasOpen) Qt.callLater(function() { focusScope.applyContextFocus() })
     return true
   }
 
@@ -564,7 +575,11 @@ Item {
     if (id === "cursorDown") return moveCursor(1)
     if (id === "cursorUp") return moveCursor(-1)
     if (id === "open") return openMessage(cursorId)
-    if (id === "backToList") return backToList()
+    if (id === "readerPageDown") return reader.scrollByPage(1)
+    if (id === "readerPageUp") return reader.scrollByPage(-1)
+    if (id === "openLink") return reader.openFirstLink()
+    if (id === "nextAccount") return switchAccountBy(1)
+    if (id === "previousAccount") return switchAccountBy(-1)
     if (id === "archive") return actOnCursor("archive")
     if (id === "trash") return actOnCursor("trash")
     // Through the same guard actOnCursor applies rather than around it:
@@ -574,7 +589,7 @@ Item {
       return
     }
     if (id === "markRead") return actOnCursor("markRead")
-    if (id === "markUnread") return actOnCursor("markUnread")
+    if (id === "markUnread") return markCurrentUnread()
     if (id === "reply") return composeFromCursor("reply")
     if (id === "replyAll") return composeFromCursor("replyAll")
     if (id === "forward") return composeFromCursor("forward")
@@ -595,7 +610,9 @@ Item {
     if (id === "send") return compose.submit()
     if (id === "undoSend") { undoPendingSend(); return }
     if (id === "search") return searchBar.focusField()
+    if (id === "searchAnywhere") return searchBar.focusField()
     if (id === "goMailbox") return goSlot(Keymap.slotFor(id, sequence))
+    if (id === "showUnread") return goMailbox("unread")
     if (id === "goAccount") {
       var accountIndex = Keymap.slotFor(id, sequence)
       if (service && accountIndex >= 0 && accountIndex < service.accountCount)
@@ -819,6 +836,15 @@ Item {
     if (target !== "") service.selectMailbox(target)
     backToList()
     return true
+  }
+
+  function switchAccountBy(offset) {
+    if (!service || service.accountCount < 2) return false
+    var current = service.indexOfActiveAccount()
+    var next = current >= 0
+      ? (current + Number(offset) + service.accountCount) % service.accountCount
+      : 0
+    return switchAccount(next)
   }
 
   function editAccount(index) {

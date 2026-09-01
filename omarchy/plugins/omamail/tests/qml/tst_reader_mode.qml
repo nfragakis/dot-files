@@ -148,6 +148,13 @@ Item {
       verify(text.indexOf("url(") < 0, "a CSS resource reached the renderer")
     }
 
+    function test_page_scroll_uses_the_reader_model() {
+      // This also proves MessageReader imported account/Model.js; without it
+      // the shortcut route fires but this method throws at runtime.
+      reader.scrollByPage(1)
+      verify(true)
+    }
+
     function test_the_body_is_separated_from_the_header() {
       verify(body().y >= 20,
         "mail content has its own section gap below the sender metadata")

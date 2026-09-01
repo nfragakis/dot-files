@@ -65,6 +65,8 @@ assert.strictEqual(model.survivesAction("inbox", "unstar"), true)
 assert.strictEqual(model.survivesAction("inbox", "trash"), false)
 assert.strictEqual(model.survivesAction("trash", "trash"), true)
 assert.strictEqual(model.survivesAction("trash", "untrash"), false)
+assert.strictEqual(model.returnsToListAfterAction("trash"), true)
+assert.strictEqual(model.returnsToListAfterAction("archive"), false)
 
 deepEqual(model.labelChangesFor("archive"), { add: [], remove: ["INBOX"] })
 deepEqual(model.labelChangesFor("star"), { add: ["STARRED"], remove: [] })
@@ -327,6 +329,15 @@ assert.strictEqual(model.pluralize(0, "message"), "0 messages")
   assert.strictEqual(
     model.contentYToReveal(0, 500, 40, 20, 400, pad), 0,
     "content shorter than the viewport never scrolls")
+
+  assert.strictEqual(model.contentYAfterPage(0, 100, 500, 1), 80,
+    "a page step keeps a fifth of the previous text for reading context")
+  assert.strictEqual(model.contentYAfterPage(160, 100, 500, -1), 80,
+    "Shift+Tab pages back by the same amount")
+  assert.strictEqual(model.contentYAfterPage(380, 100, 500, 1), 400,
+    "paging down clamps at the end of the message")
+  assert.strictEqual(model.contentYAfterPage(20, 100, 80, 1), 0,
+    "a message shorter than its viewport never scrolls")
 }
 
 
@@ -466,7 +477,7 @@ assert.strictEqual(model.clampZoom("1.5"), 1.5, "including one written as text")
 
 deepEqual(model.windowPrefs(""), {
   sidebarCollapsed: false, bodyZoom: 1, bodyMode: "reader",
-  alwaysShowImages: false, windowOpen: false
+  alwaysShowImages: true, windowOpen: false
 })
 assert.strictEqual(model.windowPrefs('{"plainTextForced":true}').bodyMode, "plain",
   "the old two-mode preference migrates to the three-mode setting")

@@ -2698,15 +2698,16 @@ function readerDocumentFor(source, colors) {
 // can rather than showing an empty panel. The order is reader, then the
 // sender's own formatting, then text.
 var BODY_MODES = { reader: true, original: true, plain: true }
-var HEAVY_MESSAGE_RENDERING_DEFAULT = "Show plain text first"
+var HEAVY_MESSAGE_RENDERING_DEFAULT = "Always render"
 var HEAVY_MESSAGE_RENDERING_ALWAYS = "Always render"
+var HEAVY_MESSAGE_RENDERING_PLAIN = "Show plain text first"
 
 function alwaysRenderHeavyMessages(value) {
   return value === HEAVY_MESSAGE_RENDERING_ALWAYS
 }
 
 function heavyMessageRendering(always) {
-  return always === true ? HEAVY_MESSAGE_RENDERING_ALWAYS : HEAVY_MESSAGE_RENDERING_DEFAULT
+  return always === true ? HEAVY_MESSAGE_RENDERING_ALWAYS : HEAVY_MESSAGE_RENDERING_PLAIN
 }
 
 // A stored preference, or anything else, read as one of the three. The fallback

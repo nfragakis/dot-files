@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import qs.Commons
 import qs.Ui
+import "../account/Model.js" as Model
 import "../message/Direction.js" as Direction
 import "../message/Html.js" as Html
 import "../message/Message.js" as Mail
@@ -105,6 +106,17 @@ Item {
   // The parsed form of the same document. Fitting it to this window is done on
   // the way out, so this is rebuilt on every relayout without being reparsed.
   readonly property var bodyDocument: service ? service.selectedDocument : null
+  readonly property var webLinks: Html.externalLinks(
+    bodyDocument ? bodyDocument : rawHtml)
+
+  function scrollByPage(direction) {
+    bodyFlick.contentY = Model.contentYAfterPage(bodyFlick.contentY,
+      bodyFlick.height, bodyFlick.contentHeight, direction)
+  }
+
+  function openFirstLink() {
+    if (webLinks.length > 0) root.openLink(webLinks[0])
+  }
   // The same message rebuilt for reading: paragraphs, headings, lists and
   // links, with none of the sender's presentation in it. Built beside the one
   // above off the same parse, so changing mode costs neither a fetch nor a

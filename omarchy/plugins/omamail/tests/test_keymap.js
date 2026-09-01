@@ -94,8 +94,8 @@ const help = byId("help")
 assert.strictEqual(keymap.isEnabled(help, "list", true), true,
   "the sheet's own key has to close the sheet")
 
-// The key sheet remains reachable while a field owns ordinary typing.
-assert.strictEqual(keymap.isSequenceEnabled(help, "Ctrl+K", "compose", false), true)
+// Search remains reachable while a field owns ordinary typing.
+assert.strictEqual(keymap.isEnabled(byId("searchAnywhere"), "compose", false), true)
 assert.strictEqual(keymap.isSequenceEnabled(help, "?", "compose", false), false,
   "the old bare help key remains mailbox-only")
 assert.strictEqual(keymap.isSequenceEnabled(help, "?", "list", false), true)
@@ -116,6 +116,27 @@ assert.strictEqual(keymap.isEnabled(zoomIn, "reader", false), true)
 assert.strictEqual(keymap.isEnabled(zoomIn, "page", false), false,
   "there is no message body to size on a form")
 
+const readerPageDown = byId("readerPageDown")
+assert.strictEqual(keymap.displayFor(readerPageDown), "Tab")
+assert.strictEqual(keymap.isEnabled(readerPageDown, "reader", false), true)
+assert.strictEqual(keymap.isEnabled(readerPageDown, "list", false), false,
+  "Tab only pages through an open message")
+
+const nextAccount = byId("nextAccount")
+assert.strictEqual(keymap.displayFor(nextAccount), "Ctrl+Tab")
+assert.strictEqual(keymap.isEnabled(nextAccount, "reader", false), true)
+assert.strictEqual(keymap.isEnabled(nextAccount, "calendar", false), false)
+assert.strictEqual(keymap.isEnabled(nextAccount, "compose", false), false,
+  "Ctrl+Tab does not switch accounts while composing")
+
+const readerPageUp = byId("readerPageUp")
+assert.strictEqual(keymap.displayFor(readerPageUp), "Shift+Tab")
+assert.strictEqual(keymap.isEnabled(readerPageUp, "reader", false), true)
+
+const previousAccount = byId("previousAccount")
+assert.strictEqual(keymap.displayFor(previousAccount), "Ctrl+Shift+Tab")
+assert.strictEqual(keymap.isEnabled(previousAccount, "list", false), true)
+
 // ------------------------------------------------------------ what renders
 
 const groups = keymap.helpGroups()
@@ -135,7 +156,7 @@ groups.forEach(function (group) {
 assert.strictEqual(keymap.displayFor(byId("cursorUp")), "k, Up",
   "the sheet names every key that works")
 assert.strictEqual(keymap.displayFor(byId("cursorDown")), "j, Down")
-assert.strictEqual(keymap.displayFor(byId("help")), "Ctrl+K, ?, Ctrl+/, Ctrl+?",
+assert.strictEqual(keymap.displayFor(byId("help")), "?, Ctrl+/, Ctrl+?",
   "a slash inside a sequence must not read as the separator")
 
 // Qt's sequence syntax is not the UI's.
@@ -143,27 +164,23 @@ assert.strictEqual(keymap.readableSequence("g,i"), "g then i",
   "a chord reads as a chord, not as Qt's comma")
 assert.strictEqual(keymap.readableSequence("Escape"), "Esc")
 assert.strictEqual(keymap.readableSequence("Ctrl+Return"), "Ctrl+Enter")
-assert.strictEqual(keymap.displayFor(byId("goMailbox")), "Ctrl+1…0",
+assert.strictEqual(keymap.displayFor(byId("goMailbox")), "Alt+1…0",
   "ten mailbox keys are one row on the sheet, not ten")
 
-const goAccount = byId("goAccount")
-assert.ok(goAccount, "number keys switch directly to email accounts")
-assert.strictEqual(keymap.displayFor(goAccount), "Alt+1…0",
-  "ten account keys are one row on the sheet")
-assert.strictEqual(keymap.slotFor("goAccount", "Alt+1"), 0)
-assert.strictEqual(keymap.slotFor("goAccount", "Alt+9"), 8)
-assert.strictEqual(keymap.slotFor("goAccount", "Alt+0"), 9)
-
 // Which key of the row fired, read off the row's own list rather than parsed.
-assert.strictEqual(keymap.slotFor("goMailbox", "Ctrl+1"), 0)
-assert.strictEqual(keymap.slotFor("goMailbox", "Ctrl+9"), 8)
-assert.strictEqual(keymap.slotFor("goMailbox", "Ctrl+0"), 9, "the tenth row, not the zeroth")
-assert.strictEqual(keymap.slotFor("goMailbox", "Alt+1"), -1)
+assert.strictEqual(keymap.slotFor("goMailbox", "Alt+1"), 0)
+assert.strictEqual(keymap.slotFor("goMailbox", "Alt+9"), 8)
+assert.strictEqual(keymap.slotFor("goMailbox", "Alt+0"), 9, "the tenth row, not the zeroth")
+assert.strictEqual(keymap.slotFor("goMailbox", "Ctrl+1"), -1)
 assert.strictEqual(keymap.slotFor("goMailbox", ""), -1)
 assert.strictEqual(keymap.slotFor("nothing", "Alt+1"), -1)
 assert.strictEqual(keymap.displayFor(byId("open")), "Enter, o")
 assert.strictEqual(keymap.displayFor(byId("back")), "Esc")
 assert.strictEqual(keymap.displayFor(byId("switchAccount")), "Alt+A")
+assert.strictEqual(keymap.displayFor(byId("openLink")), "l")
+assert.strictEqual(keymap.displayFor(byId("markUnread")), "u, Shift+U")
+assert.strictEqual(keymap.displayFor(byId("showUnread")), "Ctrl+U")
+assert.strictEqual(byId("backToList"), undefined)
 {
   const going = groups.filter(function (g) { return g.name === "Going" })[0]
   assert.ok(going, "Switch account lives with the other go-to keys")
@@ -187,11 +204,15 @@ assert.strictEqual(keymap.isEnabled(switchAccount, "compose", false), false,
 assert.strictEqual(keymap.isEnabled(switchAccount, "search", false), false)
 assert.strictEqual(keymap.isEnabled(switchAccount, "page", false), false)
 const calendar = byId("calendar")
-assert.strictEqual(keymap.displayFor(calendar), "Alt+C")
+assert.strictEqual(keymap.displayFor(calendar), "Ctrl+C, Alt+C")
 assert.strictEqual(keymap.isEnabled(calendar, "list", false), true)
 assert.strictEqual(keymap.isEnabled(calendar, "reader", false), true)
 assert.strictEqual(keymap.isEnabled(calendar, "calendar", false), true)
 assert.strictEqual(keymap.isEnabled(calendar, "page", false), false)
+assert.strictEqual(keymap.isEnabled(calendar, "compose", false), false,
+  "Ctrl+C remains available to copy while composing")
+assert.strictEqual(keymap.isEnabled(calendar, "search", false), false,
+  "Ctrl+C remains available to copy from search")
 const createEvent = byId("createEvent")
 assert.strictEqual(keymap.displayFor(createEvent), "c")
 assert.strictEqual(keymap.isEnabled(createEvent, "calendar", false), true)
@@ -213,7 +234,7 @@ assert.strictEqual(keymap.isEnabled(mailView, "calendar", false), true)
 assert.strictEqual(keymap.isEnabled(calendarView, "list", false), true)
 assert.strictEqual(keymap.isEnabled(calendarView, "reader", false), true)
 assert.strictEqual(keymap.isEnabled(calendarView, "compose", false), false)
-assert.strictEqual(keymap.displayFor(byId("zoomReset")), "Ctrl+Shift+0")
+assert.strictEqual(keymap.displayFor(byId("zoomReset")), "Ctrl+0")
 const sidebar = byId("toggleSidebar")
 assert.strictEqual(keymap.displayFor(sidebar), "[")
 assert.strictEqual(keymap.isEnabled(sidebar, "list", false), true)
@@ -252,8 +273,8 @@ listSequences.forEach(function (row) {
     "each entry carries its id, its sequence, and the row it came from")
 })
 assert.strictEqual(keymap.sequencesFor("compose").filter(function (row) {
-  return row.id === "help" && row.sequence === "Ctrl+K"
-}).length, 1, "the universal sequence reaches text-entry contexts")
+  return row.id === "searchAnywhere" && row.sequence === "Ctrl+K"
+}).length, 1, "universal search reaches text-entry contexts")
 assert.strictEqual(keymap.sequencesFor("compose").filter(function (row) {
   return row.id === "help" && row.sequence === "?"
 }).length, 0, "the mailbox-only sequence stays out of text-entry contexts")

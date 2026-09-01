@@ -95,8 +95,8 @@ Item {
       host.context = "compose"
       wait(20)
       keyClick(Qt.Key_K, Qt.ControlModifier)
-      compare(host.lastId, "help",
-        "Ctrl+K opens the shortcut sheet from inside a draft")
+      compare(host.lastId, "searchAnywhere",
+        "Ctrl+K opens search from inside a draft")
     }
 
     function test_alt_z_undoes_send_while_composing() {
@@ -186,35 +186,22 @@ Item {
     // 400ms deadline on an unfinished sequence, which is what the mailboxes
     // used to be reached through and why half the presses did nothing.
     function test_a_digit_names_the_mailbox_it_opens() {
-      keyClick(Qt.Key_3, Qt.ControlModifier)
+      keyClick(Qt.Key_3, Qt.AltModifier)
       compare(host.lastId, "goMailbox")
-      compare(host.lastSequence, "Ctrl+3")
+      compare(host.lastSequence, "Alt+3")
     }
 
     function test_the_tenth_mailbox_is_the_zero_key() {
-      keyClick(Qt.Key_0, Qt.ControlModifier)
+      keyClick(Qt.Key_0, Qt.AltModifier)
       compare(host.lastId, "goMailbox")
-      compare(host.lastSequence, "Ctrl+0")
+      compare(host.lastSequence, "Alt+0")
     }
 
     function test_a_digit_is_dead_in_a_draft() {
       host.context = "compose"
       wait(20)
-      keyClick(Qt.Key_3, Qt.ControlModifier)
+      keyClick(Qt.Key_3, Qt.AltModifier)
       compare(host.lastId, "", "typing a number into a reply is not going anywhere")
-    }
-
-    function test_alt_digit_names_the_account_it_opens() {
-      keyClick(Qt.Key_3, Qt.AltModifier)
-      compare(host.lastId, "goAccount")
-      compare(host.lastSequence, "Alt+3")
-    }
-
-    function test_account_digits_are_dead_in_a_draft() {
-      host.context = "compose"
-      wait(20)
-      keyClick(Qt.Key_3, Qt.AltModifier)
-      compare(host.lastId, "", "a recipient may contain a number")
     }
 
     function test_mail_and_calendar_have_mnemonic_shortcuts() {
@@ -227,11 +214,54 @@ Item {
       compare(host.lastId, "mailView")
     }
 
+    function test_ctrl_c_toggles_the_calendar_from_both_views() {
+      keyClick(Qt.Key_C, Qt.ControlModifier)
+      compare(host.lastId, "calendar")
+      host.context = "calendar"
+      host.lastId = ""
+      wait(20)
+      keyClick(Qt.Key_C, Qt.ControlModifier)
+      compare(host.lastId, "calendar")
+    }
+
+    function test_ctrl_c_is_not_captured_while_composing() {
+      host.context = "compose"
+      wait(20)
+      keyClick(Qt.Key_C, Qt.ControlModifier)
+      compare(host.lastId, "")
+    }
+
     // One press, not a chord: it opens a list the keyboard then walks, so
     // getting to it should not itself be a sequence.
     function test_the_switcher_opens_on_one_press() {
       keyClick(Qt.Key_A, Qt.AltModifier)
       compare(host.lastId, "switchAccount")
+    }
+
+    function test_tab_pages_the_reader_and_control_tab_changes_account() {
+      host.context = "reader"
+      wait(20)
+      keyClick(Qt.Key_Tab)
+      compare(host.lastId, "readerPageDown")
+      host.lastId = ""
+      keyClick(Qt.Key_Tab, Qt.ShiftModifier)
+      compare(host.lastId, "readerPageUp")
+      host.lastId = ""
+      keyClick(Qt.Key_Tab, Qt.ControlModifier)
+      compare(host.lastId, "nextAccount")
+      host.lastId = ""
+      keyClick(Qt.Key_Tab, Qt.ControlModifier | Qt.ShiftModifier)
+      compare(host.lastId, "previousAccount")
+    }
+
+    function test_u_marks_unread_and_control_u_opens_unread() {
+      host.context = "reader"
+      wait(20)
+      keyClick(Qt.Key_U)
+      compare(host.lastId, "markUnread")
+      host.lastId = ""
+      keyClick(Qt.Key_U, Qt.ControlModifier)
+      compare(host.lastId, "showUnread")
     }
 
     function test_the_bare_letter_still_means_reply_all() {
@@ -247,12 +277,12 @@ Item {
     }
 
     function test_a_reader_only_key_is_dead_in_the_list() {
-      keyClick(Qt.Key_0, Qt.ControlModifier | Qt.ShiftModifier)
+      keyClick(Qt.Key_0, Qt.ControlModifier)
       compare(host.lastId, "", "nothing to zoom from the list")
       host.context = "reader"
       host.lastId = ""
       wait(20)
-      keyClick(Qt.Key_0, Qt.ControlModifier | Qt.ShiftModifier)
+      keyClick(Qt.Key_0, Qt.ControlModifier)
       compare(host.lastId, "zoomReset")
     }
 

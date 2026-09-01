@@ -133,7 +133,10 @@ function makeAccount(account) {
     clientId: trimmed(raw.clientId),
     clientSecret: trimmed(raw.clientSecret),
     imap: makeImapSettings(raw.imap),
-    label: trimmed(raw.label)
+    label: trimmed(raw.label),
+    // Gmail categories are configured per mailbox. A Workspace account
+    // without category tabs needs Inbox even when personal accounts use Primary.
+    inboxQuery: trimmed(raw.inboxQuery)
   }
 }
 

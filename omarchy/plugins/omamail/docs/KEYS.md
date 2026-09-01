@@ -88,12 +88,16 @@ used to exist, and they had.
 | `cursorDown` | `j`, `Down` | mail | Move down |
 | `cursorUp` | `k`, `Up` | mail | Move up |
 | `open` | `Return`, `o` | mail | Open the selected message |
-| `backToList` | `u` | reader | Back to the list |
+| `readerPageDown` | `Tab` | reader | Scroll the message down |
+| `readerPageUp` | `Shift+Tab` | reader | Scroll the message up |
+| `openLink` | `l` | reader | Open the first link |
+| `nextAccount` | `Ctrl+Tab` | mail | Next account |
+| `previousAccount` | `Ctrl+Shift+Tab` | mail | Previous account |
 | `archive` | `e` | mail | Archive |
 | `trash` | `d` | mail | Move to trash |
 | `star` | `s` | mail | Star or unstar |
 | `markRead` | `Shift+I` | mail | Mark read |
-| `markUnread` | `Shift+U` | mail | Mark unread |
+| `markUnread` | `u`, `Shift+U` | mail | Mark unread |
 | `reply` | `r` | mail | Reply |
 | `replyAll` | `a` | mail | Reply to all |
 | `forward` | `f` | mail | Forward |
@@ -110,19 +114,20 @@ used to exist, and they had.
 | `send` | `Ctrl+Return` | compose | Send |
 | `undoSend` | `Alt+Z` | all | Undo send |
 | `search` | `/` | mail | Search |
-| `goMailbox` | `Ctrl+1`, `Ctrl+2`, `Ctrl+3`, `Ctrl+4`, `Ctrl+5`, `Ctrl+6`, `Ctrl+7`, `Ctrl+8`, `Ctrl+9`, `Ctrl+0` | mail | Go to that mailbox |
-| `goAccount` | `Alt+1`, `Alt+2`, `Alt+3`, `Alt+4`, `Alt+5`, `Alt+6`, `Alt+7`, `Alt+8`, `Alt+9`, `Alt+0` | mail+calendar | Go to that email account |
+| `searchAnywhere` | `Ctrl+K` | all | Search from anywhere |
+| `goMailbox` | `Alt+1`, `Alt+2`, `Alt+3`, `Alt+4`, `Alt+5`, `Alt+6`, `Alt+7`, `Alt+8`, `Alt+9`, `Alt+0` | mail | Go to that mailbox |
+| `showUnread` | `Ctrl+U` | mail | Show unread mail |
 | `switchAccount` | `Alt+A` | mail | Switch account |
-| `calendar` | `Alt+C` | mail+calendar | Switch between mail and calendar |
+| `calendar` | `Ctrl+C`, `Alt+C` | mail+calendar | Switch between mail and calendar |
 | `mailView` | `Ctrl+Shift+M` | mail+calendar | Go to mail |
 | `calendarView` | `Ctrl+Shift+C` | mail+calendar | Go to calendar |
 | `toggleSidebar` | `[` | mail+calendar | Show or hide the sidebar |
 | `zoomIn` | `Ctrl++`, `Ctrl+=` | reader | Zoom the message body in |
 | `zoomOut` | `Ctrl+-` | reader | Zoom the message body out |
-| `zoomReset` | `Ctrl+Shift+0` | reader | Reset the zoom |
+| `zoomReset` | `Ctrl+0` | reader | Reset the zoom |
 | `refresh` | `F5` | all | Check for mail |
 | `settings` | `Ctrl+,` | all | Open settings |
-| `help` | `Ctrl+K`, `?`, `Ctrl+/`, `Ctrl+?` | mail | Toggle all keybindings |
+| `help` | `?`, `Ctrl+/`, `Ctrl+?` | mail | Toggle all keybindings |
 | `back` | `Escape` | all | Back, or close the window |
 <!-- END BINDINGS -->
 

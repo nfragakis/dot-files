@@ -40,8 +40,16 @@ var BINDINGS = [
   { id: "open", keys: ["Return", "o"], contexts: MAIL,
     group: "Moving", label: "Open the selected message",
     hintKey: "o", hint: { list: "open", reader: "open" } },
-  { id: "backToList", keys: ["u"], contexts: ["reader"],
-    group: "Moving", label: "Back to the list" },
+  { id: "readerPageDown", keys: ["Tab"], contexts: ["reader"],
+    group: "Moving", label: "Scroll the message down" },
+  { id: "readerPageUp", keys: ["Shift+Tab"], contexts: ["reader"],
+    group: "Moving", label: "Scroll the message up" },
+  { id: "openLink", keys: ["l"], contexts: ["reader"],
+    group: "Moving", label: "Open the first link" },
+  { id: "nextAccount", keys: ["Ctrl+Tab"], contexts: MAIL,
+    group: "Going", label: "Next account" },
+  { id: "previousAccount", keys: ["Ctrl+Shift+Tab"], contexts: MAIL,
+    group: "Going", label: "Previous account" },
 
   { id: "archive", keys: ["e"], contexts: MAIL,
     group: "Acting", label: "Archive",
@@ -53,7 +61,7 @@ var BINDINGS = [
     group: "Acting", label: "Star or unstar" },
   { id: "markRead", keys: ["Shift+I"], contexts: MAIL,
     group: "Acting", label: "Mark read" },
-  { id: "markUnread", keys: ["Shift+U"], contexts: MAIL,
+  { id: "markUnread", keys: ["u", "Shift+U"], contexts: MAIL,
     group: "Acting", label: "Mark unread" },
 
   // Answering works from the list too, the way the row's own menu does: the
@@ -98,6 +106,8 @@ var BINDINGS = [
   // and Qt gives the field its keys before any Shortcut sees them.
   { id: "search", keys: ["/"], contexts: MAIL,
     group: "Finding", label: "Search" },
+  { id: "searchAnywhere", keys: ["Ctrl+K"], contexts: ANY,
+    group: "Finding", label: "Search from anywhere" },
 
   // The rail by number, and nothing to remember: hold Ctrl and every row says
   // which digit opens it. This replaced `g i` / `g s` / `g u` / `g t`, which
@@ -108,18 +118,12 @@ var BINDINGS = [
   // One row, ten sequences: `slotFor` reads which one fired off this row's own
   // key list, so the `Ctrl+` prefix is not written down a second time.
   { id: "goMailbox",
-    keys: ["Ctrl+1", "Ctrl+2", "Ctrl+3", "Ctrl+4", "Ctrl+5",
-      "Ctrl+6", "Ctrl+7", "Ctrl+8", "Ctrl+9", "Ctrl+0"],
-    contexts: MAIL, group: "Going", label: "Go to that mailbox",
-    display: "Ctrl+1…0" },
-
-  // Accounts are surfaces rather than destinations inside the current one, so
-  // they use Alt and the same visible order as the account switcher.
-  { id: "goAccount",
     keys: ["Alt+1", "Alt+2", "Alt+3", "Alt+4", "Alt+5",
       "Alt+6", "Alt+7", "Alt+8", "Alt+9", "Alt+0"],
-    contexts: ["list", "reader", "calendar"], group: "Going",
-    label: "Go to that email account", display: "Alt+1…0" },
+    contexts: MAIL, group: "Going", label: "Go to that mailbox",
+    display: "Alt+1…0" },
+  { id: "showUnread", keys: ["Ctrl+U"], contexts: MAIL,
+    group: "Going", label: "Show unread mail" },
 
   // One key, not nine, and modified rather than bare. Switching mailboxes is
   // not frequent enough to spend a letter on — the bare ones are the scarce
@@ -128,7 +132,7 @@ var BINDINGS = [
   { id: "switchAccount", keys: ["Alt+A"], contexts: MAIL,
     group: "Going", label: "Switch account" },
 
-  { id: "calendar", keys: ["Alt+C"], contexts: ["list", "reader", "calendar"],
+  { id: "calendar", keys: ["Ctrl+C", "Alt+C"], contexts: ["list", "reader", "calendar"],
     group: "Going", label: "Switch between mail and calendar" },
   { id: "mailView", keys: ["Ctrl+Shift+M"], contexts: ["list", "reader", "calendar"],
     group: "Going", label: "Go to mail" },
@@ -143,7 +147,7 @@ var BINDINGS = [
     group: "Reading", label: "Zoom the message body in" },
   { id: "zoomOut", keys: ["Ctrl+-"], contexts: ["reader"],
     group: "Reading", label: "Zoom the message body out" },
-  { id: "zoomReset", keys: ["Ctrl+Shift+0"], contexts: ["reader"],
+  { id: "zoomReset", keys: ["Ctrl+0"], contexts: ["reader"],
     group: "Reading", label: "Reset the zoom" },
 
   { id: "refresh", keys: ["F5"], contexts: ANY,
@@ -152,8 +156,7 @@ var BINDINGS = [
     group: "Mailbox", label: "Open settings" },
   // One action and one help row. The old keys remain mailbox-only. Ctrl+K
   // reaches the same action from fields, forms, drafts, and the calendar.
-  { id: "help", keys: ["Ctrl+K", "?", "Ctrl+/", "Ctrl+?"], contexts: MAIL,
-    sequenceContexts: { "Ctrl+K": ANY },
+  { id: "help", keys: ["?", "Ctrl+/", "Ctrl+?"], contexts: MAIL,
     survivesOverlay: true,
     group: "Mailbox", label: "Toggle all keybindings" },
   { id: "back", keys: ["Escape"], contexts: ANY,

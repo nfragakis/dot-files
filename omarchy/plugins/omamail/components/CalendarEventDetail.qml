@@ -47,6 +47,8 @@ Rectangle {
   readonly property color eventColor: calendarPalette.colorFor(
     source ? source.colorKey : "accent")
   readonly property string meetingLink: httpLink(event ? event.meetLink : "")
+  readonly property var meetingEntries: event && Array.isArray(event.meetingEntries)
+    ? event.meetingEntries : []
   readonly property string locationLink: httpLink(event ? event.location : "")
   readonly property string providerLink: httpLink(event ? event.href : "")
 
@@ -178,6 +180,53 @@ Rectangle {
           font.pixelSize: Style.font.bodySmall
           wrapMode: Text.WrapAnywhere
           textFormat: Text.PlainText
+        }
+      }
+
+      Column {
+        visible: root.meetingEntries.length > 0
+        width: parent.width
+        spacing: Style.space(6)
+
+        Text {
+          width: parent.width
+          text: String(root.event && root.event.meetingName || "Join details")
+          color: root.textColor
+          font.family: root.panelFontFamily
+          font.pixelSize: Style.font.body
+          font.bold: true
+          textFormat: Text.PlainText
+        }
+
+        Repeater {
+          model: root.meetingEntries
+
+          delegate: Column {
+            required property var modelData
+            width: parent ? parent.width : 0
+            spacing: Style.space(2)
+
+            Text {
+              width: parent.width
+              text: String(parent.modelData.label || "Join")
+              color: root.dimColor
+              font.family: root.panelFontFamily
+              font.pixelSize: Style.font.bodySmall
+              textFormat: Text.PlainText
+            }
+
+            Text {
+              width: parent.width
+              text: String(parent.modelData.uri || "")
+                + (String(parent.modelData.detail || "") !== ""
+                  ? " · Code: " + String(parent.modelData.detail) : "")
+              color: root.textColor
+              font.family: root.panelFontFamily
+              font.pixelSize: Style.font.bodySmall
+              wrapMode: Text.WrapAnywhere
+              textFormat: Text.PlainText
+            }
+          }
         }
       }
 

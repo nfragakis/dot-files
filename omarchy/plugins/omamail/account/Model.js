@@ -154,6 +154,10 @@ function survivesAction(mailboxKey, action) {
   return true
 }
 
+function returnsToListAfterAction(action) {
+  return String(action || "") === "trash"
+}
+
 function labelChangesFor(action) {
   if (action === "markRead") return { add: [], remove: ["UNREAD"] }
   if (action === "markUnread") return { add: ["UNREAD"], remove: [] }
@@ -260,7 +264,7 @@ function windowPrefs(raw) {
       sidebarCollapsed: false,
       bodyZoom: 1,
       bodyMode: "reader",
-      alwaysShowImages: false,
+      alwaysShowImages: true,
       windowOpen: false
     }
   }
@@ -271,7 +275,7 @@ function windowPrefs(raw) {
     sidebarCollapsed: parsed.sidebarCollapsed === true,
     bodyZoom: clampZoom(parsed.bodyZoom),
     bodyMode: bodyMode,
-    alwaysShowImages: parsed.alwaysShowImages === true,
+    alwaysShowImages: parsed.alwaysShowImages !== false,
     windowOpen: parsed.windowOpen === true
   }
 }
@@ -503,6 +507,13 @@ function cursorAfterOffset(list, cursorId, delta) {
   return source[next].id
 }
 
+// In the reader the message on screen is current even when the list cursor
+// moved behind it. A blank reader must not fall through to that cursor.
+function currentMessageId(view, selectedId, cursorId) {
+  if (String(view || "") === "reader") return String(selectedId || "")
+  return String(cursorId || "")
+}
+
 // Where the cursor goes when the row it is on is about to leave the list.
 // Called with the list as it still is, so the departing row still has
 // neighbours: the one below takes its place, or the one above at the end.
@@ -550,6 +561,19 @@ function contentYToReveal(contentY, viewportHeight, itemY, itemHeight,
   if (height + pad + pad > view) next = y - pad
   else if (y - pad < top) next = y - pad
   else if (y + height + pad > top + view) next = y + height + pad - view
+  if (next < 0) next = 0
+  if (next > furthest) next = furthest
+  return next
+}
+
+// One keyboard page with a little overlap, so the first line after Tab still
+// has enough context to follow the sentence that crossed the fold.
+function contentYAfterPage(contentY, viewportHeight, contentHeight, direction) {
+  var top = Math.max(0, Number(contentY) || 0)
+  var view = Math.max(0, Number(viewportHeight) || 0)
+  var furthest = Math.max(0, (Number(contentHeight) || 0) - view)
+  var step = view * 0.8 * (Number(direction) < 0 ? -1 : 1)
+  var next = top + step
   if (next < 0) next = 0
   if (next > furthest) next = furthest
   return next

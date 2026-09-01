@@ -326,6 +326,7 @@ function eventsFromCaldav(xml, sourceId, rangeStart, rangeEnd) {
       // writer can change the fields it owns without dropping everything it
       // does not model, such as alarms, attendees and server extensions.
       events[j].calendarData = responses[i].data
+      addMeetingInfo(events[j], [], "")
       out.push(events[j])
     }
   }
@@ -347,6 +348,90 @@ function googleMoment(value, dateOnly) {
   return { ms: ms, allDay: dateOnly, tzid: "", resolved: true }
 }
 
+function googleConferenceEntries(item) {
+  var conference = item && item.conferenceData ? item.conferenceData : ({})
+  var source = Array.isArray(conference.entryPoints) ? conference.entryPoints : []
+  var out = []
+  for (var i = 0; i < source.length; i++) {
+    var entry = source[i] || {}
+    var uri = String(entry.uri || "").trim()
+    if (uri === "") continue
+    var kind = String(entry.entryPointType || "more").toLowerCase()
+    var detail = String(entry.meetingCode || entry.accessCode || entry.passcode
+      || entry.password || entry.pin || "").trim()
+    out.push({
+      kind: kind,
+      label: String(entry.label || (kind === "video" ? "Video call"
+        : kind === "phone" ? "Dial in" : kind === "sip" ? "SIP" : "Join")).trim(),
+      uri: uri,
+      detail: detail
+    })
+  }
+  return out
+}
+
+function googleMeetingLink(item, entries) {
+  var legacy = String(item && item.hangoutLink || "").trim()
+  if (legacy !== "") return legacy
+  var values = Array.isArray(entries) ? entries : []
+  for (var i = 0; i < values.length; i++) {
+    if (values[i].kind === "video" && /^https?:\/\//i.test(values[i].uri))
+      return values[i].uri
+  }
+  return ""
+}
+
+function meetingProvider(value) {
+  var match = /^https?:\/\/([^\/:?#]+)/i.exec(String(value || "").trim())
+  var host = match ? match[1].toLowerCase() : ""
+  if (host === "meet.google.com") return "Google Meet"
+  if (host === "teams.microsoft.com" || host === "teams.live.com") return "Microsoft Teams"
+  if (/(^|\.)zoom\.us$/.test(host)) return "Zoom"
+  if (/(^|\.)webex\.com$/.test(host)) return "Webex"
+  if (host === "meet.goto.com" || /(^|\.)gotomeeting\.com$/.test(host)) return "GoTo Meeting"
+  if (host === "meet.jit.si") return "Jitsi Meet"
+  return ""
+}
+
+function meetingUrls(value) {
+  var matches = String(value || "").match(/https?:\/\/[^\s<>"']+/gi) || []
+  var out = []
+  for (var i = 0; i < matches.length; i++) {
+    var candidate = matches[i].replace(/[),.;\]}]+$/, "")
+    if (meetingProvider(candidate) !== "") out.push(candidate)
+  }
+  return out
+}
+
+function addMeetingInfo(event, entries, name) {
+  var target = event || ({})
+  var values = Array.isArray(entries) ? entries.slice() : []
+  var seen = {}
+  for (var i = 0; i < values.length; i++) seen[String(values[i].uri || "")] = true
+  var discovered = meetingUrls(String(target.location || "") + "\n"
+    + String(target.description || "") + "\n" + String(target.meetLink || ""))
+  for (var d = 0; d < discovered.length; d++) {
+    if (seen[discovered[d]]) continue
+    seen[discovered[d]] = true
+    values.push({ kind: "video", label: meetingProvider(discovered[d]),
+      uri: discovered[d], detail: "" })
+  }
+  var meetingName = String(name || "").trim()
+  if (meetingName === "" && values.length > 0)
+    meetingName = meetingProvider(values[0].uri) || "Join details"
+  target.meetingName = meetingName
+  target.meetingEntries = values
+  if (String(target.meetLink || "") === "") {
+    for (var v = 0; v < values.length; v++) {
+      if (values[v].kind === "video" && /^https?:\/\//i.test(values[v].uri)) {
+        target.meetLink = values[v].uri
+        break
+      }
+    }
+  }
+  return target
+}
+
 function eventsFromGoogle(payload, sourceId) {
   var items = payload && Array.isArray(payload.items) ? payload.items : []
   var out = []
@@ -358,7 +443,8 @@ function eventsFromGoogle(payload, sourceId) {
     if (!start) continue
     var end = googleMoment(item.end && (item.end.dateTime || item.end.date),
       !!(item.end && item.end.date && !item.end.dateTime))
-    out.push({
+    var meetingEntries = googleConferenceEntries(item)
+    var event = {
       method: "", uid: String(item.iCalUID || item.id || ""),
       // The write URL needs the item's own id, not the iCalUID: with
       // singleEvents=true an expanded occurrence carries an instance id, and
@@ -371,9 +457,14 @@ function eventsFromGoogle(payload, sourceId) {
       status: String(item.status || "").toUpperCase(), organizer: item.organizer || null,
       attendees: Array.isArray(item.attendees) ? item.attendees : [],
       start: start, end: end, recurrence: Array.isArray(item.recurrence)
-        ? item.recurrence.join("; ") : "", meetLink: String(item.hangoutLink || ""),
+        ? item.recurrence.join("; ") : "",
+      meetLink: googleMeetingLink(item, meetingEntries),
       sourceId: String(sourceId || ""), href: String(item.htmlLink || ""), source: null
-    })
+    }
+    addMeetingInfo(event, meetingEntries, String(item.conferenceData
+      && item.conferenceData.conferenceSolution
+      && item.conferenceData.conferenceSolution.name || ""))
+    out.push(event)
   }
   out.sort(compareEvents)
   return out

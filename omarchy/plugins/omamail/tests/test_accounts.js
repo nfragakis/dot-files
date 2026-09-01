@@ -313,6 +313,14 @@ assert.strictEqual(accounts.count(accounts.discardDraftAt(pendingList, 0)), 3)
   assert.strictEqual(accounts.makeAccount({ email: "j@x.com", provider: "IMAP" }).provider, "imap")
   assert.strictEqual(accounts.makeAccount({ email: "j@x.com", provider: " hey " }).provider, "hey")
 
+  // A mailbox may override the global inbox filter. Workspace Gmail accounts
+  // commonly have no category tabs, so a global category:primary query would
+  // otherwise make a healthy inbox look empty.
+  assert.strictEqual(accounts.makeAccount({
+    email: "j@work.test", inboxQuery: " in:inbox "
+  }).inboxQuery, "in:inbox")
+  assert.strictEqual(accounts.makeAccount({ email: "j@gmail.com" }).inboxQuery, "")
+
   // A Gmail account keeps the bare address as its id, so nothing already on
   // disk — its cache directory, its keyring entry, the activeId in the file —
   // needs migrating when this build first runs.

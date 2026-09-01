@@ -19,7 +19,7 @@ Item {
 
   property date visibleMonth: new Date(new Date().getFullYear(), new Date().getMonth(), 1)
   property date visibleWeek: new Date()
-  property string viewMode: "month"
+  property string viewMode: "week"
   property string selectedEventId: ""
   property var detailEvent: null
   readonly property bool detailOpen: detailEvent !== null

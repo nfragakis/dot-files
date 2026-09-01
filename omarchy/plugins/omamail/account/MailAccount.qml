@@ -36,6 +36,7 @@ Item {
 
   required property string pluginDir
   property string configuredEmail: ""
+  property string configuredInboxQuery: ""
 
   // Which mailbox this is, and whether it is the one on screen. An inactive
   // account still counts its unread mail; it just does not fetch lists or
@@ -80,7 +81,11 @@ Item {
     Math.floor(Number(setting("refreshIntervalSec", 120))) || 120))
   readonly property int maxMessages: Math.max(5, Math.min(100,
     Math.floor(Number(setting("maxMessages", 25))) || 25))
-  readonly property string defaultQuery: String(setting("defaultQuery", "in:inbox")).trim()
+  readonly property string defaultQuery: {
+    var accountQuery = String(configuredInboxQuery || "").trim()
+    return accountQuery !== "" ? accountQuery
+      : String(setting("defaultQuery", "in:inbox")).trim()
+  }
   readonly property bool notifyNewMail: String(setting("notifyNewMail", "On")) !== "Off"
   readonly property int oauthPort: OAuth.normalizedPort(setting("oauthPort", OAuth.DEFAULT_PORT))
   readonly property int undoSendSeconds: Outbox.normalizeDelay(

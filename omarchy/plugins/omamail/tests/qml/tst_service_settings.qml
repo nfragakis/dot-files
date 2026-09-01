@@ -27,15 +27,15 @@ Item {
   TestCase {
     name: "ServiceSettings"
 
-    function test_unified_calendar_setting_defaults_off_and_persists_changes() {
+    function test_unified_calendar_setting_defaults_on_and_persists_changes() {
       mailService.applySettings({})
-      compare(mailService.unifiedCalendarView, false)
-
-      mailService.setUnifiedCalendarView(true)
       compare(mailService.unifiedCalendarView, true)
+
+      mailService.setUnifiedCalendarView(false)
+      compare(mailService.unifiedCalendarView, false)
       compare(shellStore.updatedId, "omamail")
       verify(shellStore.updatedEntry !== null)
-      compare(shellStore.updatedEntry.unifiedCalendarView, true)
+      compare(shellStore.updatedEntry.unifiedCalendarView, false)
     }
   }
 }

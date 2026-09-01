@@ -387,6 +387,8 @@ if 'iconName: root.calendarVisible ? "mail" : "calendar"' in header:
 calendar = Path("components/CalendarView.qml").read_text()
 if "CalendarSidebar {" in calendar:
     raise SystemExit("test_source.sh: Calendar must not open a second sidebar")
+if 'property string viewMode: "week"' not in calendar:
+    raise SystemExit("test_source.sh: Calendar must open in the weekly view")
 week = Path("components/WeekCalendarView.qml").read_text()
 for source, name in ((calendar, "month"), (week, "week")):
     if "required property color calendarBorderColor" not in source:

@@ -55,7 +55,7 @@ Item {
     notifyNewMail: "On",
     oauthPort: 9481,
     undoSendSeconds: 10,
-    unifiedCalendarView: false
+    unifiedCalendarView: true
   })
   property var settings: defaultSettingValues
   readonly property int undoSendSeconds: Outbox.normalizeDelay(
@@ -68,8 +68,8 @@ Item {
   // fact about the mail, not about the interface around it.
   readonly property string contentDirection: Direction.normalizeMode(
     settings ? settings.contentDirection : null)
-  readonly property bool unifiedCalendarView: !!settings
-    && settings.unifiedCalendarView === true
+  readonly property bool unifiedCalendarView: !settings
+    || settings.unifiedCalendarView !== false
 
   // Thunderbird and Betterbird keep both explicit and learned addresses in
   // their local profile. The helper reads those databases without modifying
@@ -409,13 +409,13 @@ Item {
   // this window's type at this window's measure — and the other two are there
   // for the messages whose own layout is carrying something.
   property string bodyMode: "reader"
-  // Off until somebody says otherwise, and then it stays said. Loading a
+  // On by default for this checkout, and then the saved preference wins. Loading a
   // remote image tells its host that this address opened this message, at this
   // moment — the reason the answer was once asked for one message at a time.
   // Asked for every message, it is a decision somebody makes once and should
   // not be asked to make again on the next one; the switch that turns it on is
   // in Settings, which is also the only place that can turn it back off.
-  property bool alwaysShowImages: false
+  property bool alwaysShowImages: true
   property bool windowPrefsLoaded: false
   property string windowWritePayload: ""
   property bool restoreWindow: false
@@ -893,6 +893,7 @@ Item {
       pluginDir: root.pluginDir
       accountId: entry ? entry.id : ""
       configuredEmail: entry ? entry.email : ""
+      configuredInboxQuery: entry ? entry.inboxQuery : ""
       // Which service this mailbox is, and — for the one that needs them — the
       // servers it talks to. Both come off the account entry, so changing an
       // account's provider in the file rebuilds it as that provider.

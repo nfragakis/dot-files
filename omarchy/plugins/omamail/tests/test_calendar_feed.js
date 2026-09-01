@@ -227,6 +227,14 @@ const google = feed.eventsFromGoogle({ items: [{
   description: "Details",
   location: "Room 2",
   htmlLink: "https://calendar.google.com/event?eid=x",
+  conferenceData: {
+    conferenceSolution: { name: "Google Meet" },
+    entryPoints: [
+      { entryPointType: "video", uri: "https://meet.google.com/abc-defg-hij" },
+      { entryPointType: "phone", uri: "tel:+15551234567",
+        label: "+1 555-123-4567", pin: "246810" }
+    ]
+  },
   start: { dateTime: "2026-08-24T10:00:00+02:00" },
   end: { dateTime: "2026-08-24T11:00:00+02:00" },
   status: "confirmed"
@@ -237,6 +245,32 @@ assert.strictEqual(google[0].googleId, "g1",
   "the write URL needs the item id, separate from the iCalUID")
 assert.strictEqual(google[0].sourceId, "google:me")
 assert.strictEqual(google[0].start.ms, Date.parse("2026-08-24T10:00:00+02:00"))
+assert.strictEqual(google[0].meetingName, "Google Meet")
+assert.strictEqual(google[0].meetLink, "https://meet.google.com/abc-defg-hij",
+  "the video entry point becomes the one-click join link")
+assert.deepStrictEqual(JSON.parse(JSON.stringify(google[0].meetingEntries)), [
+  { kind: "video", label: "Video call", uri: "https://meet.google.com/abc-defg-hij",
+    detail: "" },
+  { kind: "phone", label: "+1 555-123-4567", uri: "tel:+15551234567",
+    detail: "246810" }
+])
+const providerLinks = {
+  description: "Zoom https://thetatech.zoom.us/j/123456789 and "
+    + "Teams https://teams.microsoft.com/l/meetup-join/abc, plus notes",
+  location: "https://example.webex.com/meet/nick",
+  meetLink: ""
+}
+feed.addMeetingInfo(providerLinks, [], "")
+assert.strictEqual(providerLinks.meetingName, "Webex")
+assert.strictEqual(providerLinks.meetLink, "https://example.webex.com/meet/nick")
+assert.deepStrictEqual(providerLinks.meetingEntries.map(function(entry) {
+  return entry.label
+}), ["Webex", "Zoom", "Microsoft Teams"],
+"known meeting providers are found in both the location and description")
+assert.strictEqual(JSON.stringify(feed.meetingUrls(
+  "Agenda https://example.com/doc and https://meet.jit.si/team-room.")),
+  JSON.stringify(["https://meet.jit.si/team-room"]),
+  "ordinary event links are not mislabeled as join links")
 const googleUrl = feed.googleEventsUrl(Date.UTC(2026, 7, 1), Date.UTC(2026, 8, 1))
 assert.ok(googleUrl.indexOf("https://www.googleapis.com/calendar/v3/calendars/primary/events?") === 0)
 assert.strictEqual(feed.googleEventUrl("g1_20260824T080000Z"),
