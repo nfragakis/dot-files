@@ -199,8 +199,8 @@ Item {
       height: card.borderTop + Style.space(16) + content.implicitHeight
         + Style.space(16) + card.borderBottom
       anchors.horizontalCenter: parent.horizontalCenter
-      anchors.bottom: parent.bottom
-      anchors.bottomMargin: Style.space(67)
+      anchors.top: parent.top
+      anchors.topMargin: Style.space(67)
       color: Util.alpha(Color.background, 0.96)
       borderSpec: Border.surfaceSpec("popups", "border", Color.popups.border,
         Math.max(1, Style.space(2)))

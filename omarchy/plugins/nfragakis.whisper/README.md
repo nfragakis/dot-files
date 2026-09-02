@@ -2,7 +2,7 @@
 
 A panel-only Omarchy plugin for private local dictation. It has no bar widget
 and adds nothing to the sidebar. While recording, a click-through popup at the
-bottom of the screen shows a live waveform from the selected PipeWire source.
+top center of the screen shows a live waveform from the selected PipeWire source.
 After recording stops, the popup shows transcription progress until the text is
 copied and pasted at the cursor.
 
