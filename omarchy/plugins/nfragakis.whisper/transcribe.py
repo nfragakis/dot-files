@@ -259,7 +259,6 @@ def main():
     if not audio_file:
         return 1
 
-    started = time.monotonic()
     try:
         text = transcribe_audio(audio_file)
     except Exception as exc:
@@ -273,12 +272,7 @@ def main():
     if not copy_to_clipboard(text):
         return 1
 
-    pasted = paste_at_cursor()
-    elapsed = time.monotonic() - started
-    if pasted:
-        notify("Local transcription done", f"Pasted in {elapsed:.2f}s")
-    else:
-        notify("Local transcription done", f"Copied in {elapsed:.2f}s; paste it manually")
+    paste_at_cursor()
     print(text)
     return 0
 
