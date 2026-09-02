@@ -750,6 +750,12 @@ assert.ok(bare.indexOf("x</body>") > 0)
   assert.strictEqual(html.imageLinkIndex("https://example.com"), 0, "ordinary links are untouched")
   assert.strictEqual(html.imageLinkIndex("omarchy-image:0"), 0)
   assert.strictEqual(html.imageLinkIndex(""), 0)
+
+  deepEqual(html.externalLinks('<a href="https://one.example/path">one</a>'
+      + '<a href="javascript:bad()">bad</a><a href="https://one.example/path">again</a>'
+      + '<a href="http://two.example/">two</a>'),
+    ["https://one.example/path", "http://two.example/"],
+    "the keyboard opens safe web links in body order, without duplicates")
 }
 
 

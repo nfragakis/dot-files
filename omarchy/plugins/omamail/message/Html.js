@@ -678,6 +678,35 @@ function safeHref(value) {
   return /^\s*(https?:|mailto:)/i.test(String(value || ""))
 }
 
+// Web links the keyboard may open, in body order and without duplicates. The
+// sanitized document has already dropped script-like hrefs; this tighter gate
+// also refuses local/private hosts because a one-key action should never knock
+// on something inside the user's network.
+function externalLinks(source) {
+  var root = documentTree(source)
+  var out = []
+  var seen = ({})
+
+  function walk(node) {
+    for (var i = 0; i < node.children.length; i++) {
+      var child = node.children[i]
+      if (child.type === "text") continue
+      if (child.name === "a") {
+        var href = attributeOf(child, "href")
+        var url = href ? decodeReferences(String(href.value || "")).trim() : ""
+        if (imageSourceKind(url) === "remote" && !seen[url]) {
+          seen[url] = true
+          out.push(url)
+        }
+      }
+      walk(child)
+    }
+  }
+
+  walk(root)
+  return out
+}
+
 
 // ========================================================= style declarations
 //

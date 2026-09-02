@@ -155,6 +155,11 @@ Item {
       verify(true)
     }
 
+    function test_the_first_safe_link_reaches_the_keyboard_reader() {
+      compare(reader.webLinks.length, 1)
+      compare(reader.webLinks[0], "https://example.com/board")
+    }
+
     function test_the_body_is_separated_from_the_header() {
       verify(body().y >= 20,
         "mail content has its own section gap below the sender metadata")
