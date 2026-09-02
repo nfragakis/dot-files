@@ -59,8 +59,10 @@ configured and one that works.
 - **Calendar dashboard config.** `~/.config/omarchy/calendar-dashboard.json`
   does not exist until it is created. `omarchy/plugins/nfragakis.clock/sync/`
   has the setup script and `AUTH.md`.
-- **Whisper dictation.** A `whisper.cpp` checkout, a local build, and model
-  weights, none of which are in this repository. See `whisper-stt/README.md`.
+- **Whisper dictation.** The shell UI and transcription code are the
+  `nfragakis.whisper` plugin. A `whisper.cpp` checkout, a local build, and model
+  weights still stay outside git in machine-specific local state. See
+  `omarchy/plugins/nfragakis.whisper/README.md`.
 
 ## Traps
 

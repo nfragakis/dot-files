@@ -26,7 +26,7 @@ rebind("SUPER + SHIFT + X", "X", { webapp = "https://x.com/" })
 rebind(
   "SUPER + SHIFT + L",
   "Whisper STT",
-  "/home/nfragakis/.config/whisper-stt/toggle-recording.sh"
+  "omarchy-shell whisper-stt toggle"
 )
 
 rebind("SUPER + S", "Audio controls", "omarchy-shell shell toggle omarchy.audio")

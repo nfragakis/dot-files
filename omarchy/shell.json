@@ -73,6 +73,10 @@
     "lock": 300,
     "screensaver": 150
   },
-  "plugins": [],
+  "plugins": [
+    {
+      "id": "nfragakis.whisper"
+    }
+  ],
   "version": 1
 }

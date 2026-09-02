@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "id": "nfragakis.whisper",
+  "name": "Whisper Dictation",
+  "version": "1.0.0",
+  "author": "Nick Fragakis",
+  "description": "Private local dictation with a live microphone waveform",
+  "kinds": [
+    "panel"
+  ],
+  "keepLoaded": true,
+  "entryPoints": {
+    "panel": "Whisper.qml"
+  }
+}

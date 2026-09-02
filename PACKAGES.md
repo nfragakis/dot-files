@@ -57,15 +57,23 @@ reads the calendars EDS already has and needs nothing here.
 
 ## Whisper dictation
 
-`whisper-stt/` needs a `whisper.cpp` checkout, a local build, and model
-weights, none of which are in this repository. Its own README has the steps;
-`whisper-stt/requirements.txt` covers the Python side.
+`omarchy/plugins/nfragakis.whisper/` needs a `whisper.cpp` checkout, a local
+build, and model weights, none of which are in this repository. Its README has
+the setup steps. The runtime path uses only Python's standard library.
+
+| Package | Why |
+| --- | --- |
+| `pipewire-audio` | Provides `pw-record` for microphone capture. |
+| `python` | Runs the local transcription and clipboard pipeline. |
+| `wl-clipboard` | Provides `wl-copy` for the transcript. |
+| `wtype` | Pastes the transcript into the focused Wayland application. |
 
 ## Checking a machine
 
 ```bash
 for p in evolution evolution-data-server python-gobject libsecret socat \
-         openssl curl xdg-utils uv ghostty neovim tmux mise zed wiremix; do
+         openssl curl xdg-utils uv ghostty neovim tmux mise zed wiremix \
+         pipewire-audio python wl-clipboard wtype; do
   pacman -Qq "$p" >/dev/null 2>&1 || echo "missing: $p"
 done
 ```

@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-STATE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+STATE_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/whisper-stt"
 AUDIO="${1:-$STATE_DIR/last-recording.wav}"
 RUNS="${RUNS:-5}"
 SERVER_URL="http://127.0.0.1:8178/inference"

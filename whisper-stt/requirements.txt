@@ -1,1 +1,0 @@
-# The local transcription path uses only Python's standard library.

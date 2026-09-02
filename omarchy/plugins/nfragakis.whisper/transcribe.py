@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Private, local speech-to-text for the desktop recording shortcut."""
+"""Stop, transcribe, and paste a private local Whisper recording."""
 
 import json
 import os
-import shutil
 import signal
 import socket
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.request
@@ -15,11 +15,16 @@ import uuid
 from pathlib import Path
 
 
-STATE_DIR = Path.home() / ".config" / "whisper-stt"
+STATE_DIR = Path(
+    os.environ.get(
+        "WHISPER_STT_STATE_DIR",
+        Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
+        / "whisper-stt",
+    )
+)
 PID_FILE = STATE_DIR / "recording.pid"
 RECORDING_FILE = STATE_DIR / "recording.wav"
 LAST_AUDIO_FILE = STATE_DIR / "last-recording.wav"
-DEVICE_CONFIG = STATE_DIR / "audio_device"
 
 SERVER_HOST = "127.0.0.1"
 SERVER_PORT = 8178
@@ -27,15 +32,7 @@ SERVER_URL = f"http://{SERVER_HOST}:{SERVER_PORT}/inference"
 SERVER_UNIT = "whisper-stt-local.service"
 LOCAL_CLI = STATE_DIR / "runtime" / "whisper.cpp" / "build-vulkan" / "bin" / "whisper-cli"
 LOCAL_MODEL = STATE_DIR / "models" / "ggml-large-v3-turbo-q5_0.bin"
-
-
-def load_audio_device():
-    """Load the preferred PipeWire source, or let PipeWire use its default."""
-    if DEVICE_CONFIG.exists():
-        device = DEVICE_CONFIG.read_text().strip()
-        if device:
-            return device
-    return None
+LOCAL_VAD_MODEL = STATE_DIR / "models" / "ggml-silero-v6.2.0.bin"
 
 
 def notify(title, message=""):
@@ -51,61 +48,32 @@ def notify(title, message=""):
         pass
 
 
-def start_recording():
-    """Start a mono 16 kHz PipeWire recording."""
+def is_recording_process(pid):
+    """Do not trust a stale PID file enough to signal an unrelated process."""
     try:
-        RECORDING_FILE.unlink(missing_ok=True)
-        cmd = ["pw-record", "--channels=1", "--rate=16000", "--format=s16"]
-
-        device = load_audio_device()
-        if device:
-            cmd.extend(["--target", device])
-        cmd.append(str(RECORDING_FILE))
-
-        process = subprocess.Popen(
-            cmd,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            start_new_session=True,
-        )
-        PID_FILE.write_text(str(process.pid))
-        subprocess.Popen(
-            [
-                "notify-send",
-                "-a",
-                "Whisper STT",
-                "🎙️ Recording started",
-                "Press SUPER+SHIFT+L again to stop",
-            ],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-        return True
-    except FileNotFoundError:
-        notify("Recording failed", "pw-record is not installed")
-    except Exception as exc:
-        notify("Recording failed", str(exc))
-    return False
+        return (Path("/proc") / str(pid) / "comm").read_text().strip() == "pw-record"
+    except (FileNotFoundError, PermissionError, OSError):
+        return False
 
 
 def stop_recording():
     """Stop PipeWire cleanly and retain the latest complete WAV."""
     try:
         if not PID_FILE.exists():
-            notify("Error", "No recording in progress")
+            notify("Recording failed", "No recording is in progress")
             return None
 
         pid = int(PID_FILE.read_text().strip())
-        try:
-            os.kill(pid, signal.SIGINT)
-        except ProcessLookupError:
-            pass
+        if not is_recording_process(pid):
+            PID_FILE.unlink(missing_ok=True)
+            notify("Recording failed", "The recording process is no longer running")
+            return None
+
+        os.kill(pid, signal.SIGINT)
 
         deadline = time.monotonic() + 1.5
         while time.monotonic() < deadline:
-            try:
-                os.kill(pid, 0)
-            except ProcessLookupError:
+            if not is_recording_process(pid):
                 break
             time.sleep(0.03)
 
@@ -116,7 +84,7 @@ def stop_recording():
 
         os.replace(RECORDING_FILE, LAST_AUDIO_FILE)
         return LAST_AUDIO_FILE
-    except Exception as exc:
+    except (OSError, ValueError) as exc:
         notify("Stop failed", str(exc))
         PID_FILE.unlink(missing_ok=True)
         return None
@@ -155,7 +123,7 @@ def ensure_local_server():
 
 
 def multipart_request(audio_file):
-    """Build the small multipart request accepted by the loopback server."""
+    """Build the multipart request accepted by the loopback server."""
     boundary = f"----whisper-stt-{uuid.uuid4().hex}"
     chunks = []
 
@@ -171,10 +139,10 @@ def multipart_request(audio_file):
 
     for name, value in (
         ("temperature", "0.0"),
-        ("temperature_inc", "0.0"),
+        ("temperature_inc", "0.2"),
         ("response_format", "json"),
         ("language", "en"),
-        ("no_timestamps", "true"),
+        ("no_timestamps", "false"),
         ("best_of", "1"),
         ("beam_size", "1"),
     ):
@@ -206,39 +174,52 @@ def transcribe_via_server(audio_file):
     )
     with urllib.request.urlopen(request, timeout=60) as response:
         payload = json.loads(response.read().decode("utf-8"))
-    return payload.get("text", "").strip()
+    return " ".join(payload.get("text", "").split())
 
 
 def transcribe_via_cli(audio_file):
     """Local fallback when the resident server is unavailable."""
-    if not LOCAL_CLI.is_file() or not LOCAL_MODEL.is_file():
-        raise FileNotFoundError("Local Whisper runtime or model is missing")
+    if (
+        not LOCAL_CLI.is_file()
+        or not LOCAL_MODEL.is_file()
+        or not LOCAL_VAD_MODEL.is_file()
+    ):
+        raise FileNotFoundError("Local Whisper runtime, speech model, or VAD model is missing")
 
-    result = subprocess.run(
-        [
-            str(LOCAL_CLI),
-            "-m",
-            str(LOCAL_MODEL),
-            "-f",
-            str(audio_file),
-            "-l",
-            "en",
-            "-t",
-            "8",
-            "-bs",
-            "1",
-            "-bo",
-            "1",
-            "-nf",
-            "-nt",
-            "-np",
-        ],
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=60,
-    )
-    return result.stdout.strip()
+    with tempfile.TemporaryDirectory(prefix="whisper-stt-") as temp_dir:
+        output_base = Path(temp_dir) / "transcript"
+        subprocess.run(
+            [
+                str(LOCAL_CLI),
+                "-m",
+                str(LOCAL_MODEL),
+                "-f",
+                str(audio_file),
+                "-l",
+                "en",
+                "-t",
+                "8",
+                "-bs",
+                "1",
+                "-bo",
+                "1",
+                "--vad",
+                "-vm",
+                str(LOCAL_VAD_MODEL),
+                "-vp",
+                "500",
+                "-oj",
+                "-of",
+                str(output_base),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        payload = json.loads(output_base.with_suffix(".json").read_text())
+
+    return "".join(segment["text"] for segment in payload["transcription"]).strip()
 
 
 def transcribe_audio(audio_file):
@@ -274,9 +255,6 @@ def paste_at_cursor():
 
 
 def main():
-    if not PID_FILE.exists():
-        return 0 if start_recording() else 1
-
     audio_file = stop_recording()
     if not audio_file:
         return 1
@@ -292,10 +270,15 @@ def main():
         notify("Local transcription failed", "The model returned no text")
         return 1
 
-    copy_to_clipboard(text)
-    paste_at_cursor()
+    if not copy_to_clipboard(text):
+        return 1
+
+    pasted = paste_at_cursor()
     elapsed = time.monotonic() - started
-    notify("✅ Local transcription done", f"Pasted in {elapsed:.2f}s")
+    if pasted:
+        notify("Local transcription done", f"Pasted in {elapsed:.2f}s")
+    else:
+        notify("Local transcription done", f"Copied in {elapsed:.2f}s; paste it manually")
     print(text)
     return 0
 
