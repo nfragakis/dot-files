@@ -29,7 +29,11 @@ Item {
   readonly property var monthNames: ["January", "February", "March", "April", "May", "June",
     "July", "August", "September", "October", "November", "December"]
   readonly property var weekdayNames: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-  readonly property string todayIso: Calendar.isoDate(new Date())
+  // A bare new Date() gives a QML binding no changing dependency, so it keeps
+  // the day on which the view was created. The controller's minute clock is
+  // shared with the now line and keeps both calendar modes current.
+  readonly property string todayIso: Calendar.isoDate(new Date(
+    controller ? controller.nowMs : Date.now()))
   signal createAt(double startMs)
   signal copyRequested(string text)
   signal openRequested(string url)
@@ -39,7 +43,7 @@ Item {
   Binding {
     target: root.controller
     property: "clockRunning"
-    value: root.visible && root.viewMode === "week"
+    value: root.visible
     when: root.controller !== null
   }
 
@@ -117,7 +121,9 @@ Item {
   }
 
   function goToday() {
-    var now = new Date()
+    var nowMs = Date.now()
+    if (controller) controller.nowMs = nowMs
+    var now = new Date(nowMs)
     visibleMonth = new Date(now.getFullYear(), now.getMonth(), 1)
     visibleWeek = now
     refresh()
@@ -483,6 +489,7 @@ Item {
       visible: root.viewMode === "week"
       controller: root.controller
       nowMs: root.controller ? root.controller.nowMs : 0
+      todayIso: root.todayIso
       days: root.weekDays
       textColor: root.textColor
       backgroundColor: root.backgroundColor

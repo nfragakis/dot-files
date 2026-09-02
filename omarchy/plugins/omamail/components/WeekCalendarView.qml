@@ -9,6 +9,7 @@ Item {
   required property var controller
   required property var days
   required property double nowMs
+  required property string todayIso
   required property color textColor
   required property color backgroundColor
   required property color accentColor
@@ -62,11 +63,11 @@ Item {
         Text {
           anchors.centerIn: parent
           text: root.weekdayNames[index] + " " + modelData.day
-          color: modelData.isoDate === Calendar.isoDate(new Date())
+          color: modelData.isoDate === root.todayIso
             ? root.textColor : root.dimColor
           font.family: root.panelFontFamily
           font.pixelSize: Style.font.caption
-          font.bold: modelData.isoDate === Calendar.isoDate(new Date())
+          font.bold: modelData.isoDate === root.todayIso
           textFormat: Text.PlainText
         }
       }
@@ -115,7 +116,7 @@ Item {
 
           Rectangle {
             anchors.fill: parent
-            color: allDayColumn.modelData.isoDate === Calendar.isoDate(new Date())
+            color: allDayColumn.modelData.isoDate === root.todayIso
               ? root.calendarTodayBackgroundColor : "transparent"
             border.width: root.calendarBorderWidth
             border.color: root.calendarBorderColor
@@ -257,7 +258,7 @@ Item {
 
             Rectangle {
               anchors.fill: parent
-              color: dayColumn.modelData.isoDate === Calendar.isoDate(new Date())
+              color: dayColumn.modelData.isoDate === root.todayIso
                 ? root.calendarTodayBackgroundColor : "transparent"
               border.width: root.calendarBorderWidth
               border.color: root.calendarBorderColor
