@@ -24,3 +24,15 @@ The installer links these paths into `~/.config/omarchy`:
 It is safe to run repeatedly. A conflicting file, directory, or link is moved
 to `~/.local/state/dot-files/backups/omarchy/<timestamp>` before the repo path
 is linked. Other user plugins and Omarchy configuration are left in place.
+
+## Keyboard
+
+Install the repo-managed Hyprland input settings and the system-wide `keyd`
+configuration with:
+
+```bash
+./install-input.sh
+```
+
+This maps Caps Lock to Escape when tapped and Super/Meta when held. The
+installer backs up the live Hyprland input file before replacing it.

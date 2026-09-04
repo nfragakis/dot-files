@@ -55,6 +55,12 @@ reads the calendars EDS already has and needs nothing here.
 | `zed` | `zed/` |
 | `wiremix` | `wiremix/` |
 
+## Keyboard
+
+| Package | Why |
+| --- | --- |
+| `keyd` | Makes Caps Lock a dual-role key: Escape when tapped and Super/Meta when held. |
+
 ## Whisper dictation
 
 `omarchy/plugins/nfragakis.whisper/` needs a `whisper.cpp` checkout, a local
@@ -72,7 +78,7 @@ the setup steps. The runtime path uses only Python's standard library.
 
 ```bash
 for p in evolution evolution-data-server python-gobject libsecret socat \
-         openssl curl xdg-utils uv ghostty neovim tmux mise zed wiremix \
+         openssl curl xdg-utils uv ghostty neovim tmux mise zed wiremix keyd \
          pipewire-audio python wl-clipboard wtype; do
   pacman -Qq "$p" >/dev/null 2>&1 || echo "missing: $p"
 done

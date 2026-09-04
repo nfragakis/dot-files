@@ -5,14 +5,16 @@ setting it up on a machine, and before assuming a file here is the one in use.
 
 ## What is actually installed, and what is not
 
-Only `omarchy/` has an installer. `./install-omarchy.sh` symlinks the plugin
-directories, `shell.json` and `shell.toml` into `~/.config/omarchy`, backing up
-whatever it replaces under `~/.local/state/dot-files/backups/omarchy/`.
+`omarchy/` and the keyboard input configuration have installers.
+`./install-omarchy.sh` symlinks the plugin directories, `shell.json` and
+`shell.toml` into `~/.config/omarchy`, backing up whatever it replaces under
+`~/.local/state/dot-files/backups/omarchy/`. `./install-input.sh` installs the
+repo's Hyprland input file and system-wide `keyd` configuration.
 
-**Everything else was copied by hand and is not linked.** `ghostty/`, `hypr/`,
-`nvim/`, `opencode/`, `wiremix/`, `zed/`, `tmux.conf` and `pipewire/` are
-ordinary directories that happen to resemble what is in `~/.config`. Nothing
-keeps them in step.
+**Everything else was copied by hand and is not linked.** Except for
+`hypr/input.lua`, the files under `ghostty/`, `hypr/`, `nvim/`, `opencode/`,
+`wiremix/`, `zed/`, `tmux.conf` and `pipewire/` merely resemble what is in
+`~/.config`. Nothing keeps them in step.
 
 Two consequences, both of which have already happened:
 
@@ -33,15 +35,18 @@ in caches, backups and `node_modules`. Copy the specific files that matter.
 
 ## Setting up a new machine
 
-Roughly in order. Nothing here is automated beyond step 2, deliberately.
+Roughly in order. Nothing here is automated beyond steps 2 and 3,
+deliberately.
 
 1. **Packages.** `PACKAGES.md` lists what has to exist and why, with a check
    loop at the end. Run that first; several later steps fail in confusing ways
    rather than obvious ones when something is absent.
 2. **Omarchy config.** `./install-omarchy.sh`. Safe to re-run.
-3. **Everything else.** Copy the directories in by hand, or link them — see
+3. **Keyboard input.** `./install-input.sh` installs `keyd`, its repo-managed
+   Caps Lock mapping, and `hypr/input.lua`. Safe to re-run.
+4. **Everything else.** Copy the directories in by hand, or link them — see
    the warning above about which you have chosen.
-4. **The steps no script can do.** Below.
+5. **The steps no script can do.** Below.
 
 ## Steps that need a person
 
