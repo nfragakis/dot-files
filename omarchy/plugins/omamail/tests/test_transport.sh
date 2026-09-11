@@ -101,6 +101,12 @@ check "the credentials reach curl" "$config" 'user = "jane@example.org:hunter2"'
 check "the command reaches curl" "$config" 'request = "UID SEARCH UNSEEN"'
 check "mail transport bypasses desktop HTTP/SOCKS proxies" "$config" 'noproxy = "*"'
 
+oauth_request="imap-oauth $(b64 'imaps://outlook.office365.com:993/INBOX') $(b64 'jane@hotmail.com') $(b64 'access-token') $(b64 'UID SEARCH UNSEEN')"
+oauth_config=$(config_for "$oauth_request")
+check "OAuth keeps the username separate" "$oauth_config" 'user = "jane@hotmail.com"'
+check "the bearer token reaches curl's OAuth option" "$oauth_config" 'oauth2-bearer = "access-token"'
+check_absent "OAuth does not turn the token into a password" "$oauth_config" 'user = "jane@hotmail.com:access-token"'
+
 # libcurl puts a custom multi-UID FETCH in its protocol-header callback rather
 # than stdout. The transport returns that channel when present, or the client
 # sees a successful request with an empty message list.
@@ -228,12 +234,36 @@ check "SMTP keeps its connection deadline" "$config" 'connect-timeout = 20'
 
 append="imap-append $(b64 'imaps://imap.example.org:993/Drafts') $(b64 'jane:pw') $(b64 'Subject: saved draft
 
-body')"
+body') $(b64 'draft')"
 config=$(config_for "$append")
 check "a draft is appended to its resolved mailbox" "$config" 'url = "imaps://imap.example.org:993/Drafts"'
 check "a draft upload uses the RFC 5322 message file" "$config" 'upload-file = "'
 check "an IMAP upload carries the draft flag" "$config" 'upload-flags = "draft"'
 check_absent "an IMAP draft is not sent as a custom request" "$config" 'request = '
+
+# ---------------------------------------------------------- IMAP sent upload
+
+# The copy the mailbox keeps is filed by the client, and it arrives seen:
+# its author has read it. A server that calls the folder "Sent Items" is the
+# everyday case, and the space crosses as anything else does.
+sent="imap-append $(b64 'imaps://imap.example.org:993/Sent Items') $(b64 'jane:pw') $(b64 'Subject: filed copy
+
+body') $(b64 'seen')"
+config=$(config_for "$sent")
+check "a sent copy is appended to its resolved mailbox" "$config" 'url = "imaps://imap.example.org:993/Sent Items"'
+check "a sent copy arrives seen" "$config" 'upload-flags = "seen"'
+
+# Which flags a copy arrives under is the caller's decision, so the request
+# carries them and the script has nothing to default to.
+if printf '%s\n' "imap-append $(b64 'imaps://imap.example.org:993/Sent') $(b64 'jane:pw') $(b64 'Subject: filed copy
+
+body')" \
+  | PATH="$work/bin:$PATH" sh "$script" >/dev/null 2>&1; then
+  printf '  FAIL an append without its flags was accepted\n'
+  failures=$(( failures + 1 ))
+else
+  printf '  ok   an append without its flags is refused\n'
+fi
 
 # ------------------------------------------------------------- the framing
 

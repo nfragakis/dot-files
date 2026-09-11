@@ -30,6 +30,7 @@ three directories away from the client that calls it.
 | `calendar/` | The calendars an account serves and their events: the sources in `Sources.js`, the rules in `Calendar.js`, the controller that reads and writes them, and the range cache. |
 | `message/` | A message's own content: parsing it (`Message.js`) and making it safe to draw (`Html.js`). |
 | `components/` | Views. They draw what they are given and decide nothing. |
+| `agent/` | The message agent: the rules in `Agent.js`, the runner object in `AgentRunner.qml` that starts, lists and stops jobs through `scripts/agent-job.py`. Each job is a transient systemd user unit; see `docs/AGENT.md`. |
 
 - `tests/test_qml_names.py` fails on a fourth `.qml` at the root, and on any QML
   file the Makefile does not list — a file `qmllint` never sees is a file nobody
@@ -49,9 +50,10 @@ three directories away from the client that calls it.
   tests can reach it without a compositor. QML holds no logic worth testing.
 - One JS resource may build on others with QML's `.import "Other.js" as Other`,
   which is how `providers/Registry.js` is assembled out of `Gmail.js`,
-  `Hey.js` and `Imap.js` — and those out of `GmailApi.js` and `HeyCli.js` in
-  turn, because where a message lives on the web is a fact about the service
-  rather than about the registry. `tests/load.js` resolves the chain the same
+  `Outlook.js`, `Hey.js`, `Jmap.js` and `Imap.js` — and those out of `GmailApi.js`,
+  `HeyCli.js` and `JmapProtocol.js` in turn, because where a message lives on
+  the web, or what a query string means, is a fact about the service rather
+  than about the registry. `tests/load.js` resolves the chain the same
   way the engine does, so the tests exercise the real files.
 - Tests name the module path: `load("cache/Cache.js")`. A bare filename would no
   longer say where the thing lives.
@@ -206,8 +208,9 @@ key. What matters while working:
   place the rule above inverts. It takes the key before the shortcut map sees
   it — `focus` true or false, bare or modified — so inside a popup a `KeyRouter`
   binding is what looks live and never runs, and a `Keys` handler on the
-  popup's `contentItem` is the only thing that works. The account switcher is
-  the one component that answers keys itself, for this reason.
+  popup's `contentItem` is the only thing that works. The account switcher
+  and the agent prompt are the components that answer keys themselves, for
+  this reason.
   `tests/qml/tst_popup_keys.qml` asserts both halves, so the exception cannot
   be tidied back into the rule by someone who only read the rule.
 - The mouse does not move the keyboard's cursor. Qt re-reports hover when
@@ -222,21 +225,14 @@ key. What matters while working:
 
 ## Providers
 
-- A mailbox is a **provider**: `gmail`, `hey`, or `imap`, listed in that order
-  because IMAP is the answer for a server the other two do not name and a
-  chooser that opened with it would ask the question backwards. `Provider.js` is
-  the only place that knows the differences — which mailboxes exist, what a query
-  string means, what the service can be asked to do, and how it signs in.
-  Nothing above it branches on a provider id.
-- Two objects make a provider work: something that signs in (`AuthManager`,
-  `HeyAuth`, `ImapAuth`) and something that fetches (`GmailApiClient`,
-  `HeyClient`, `ImapClient`).
-  `MailAccount` builds one pair through a `Loader` and drives them through an
-  identical interface — same method names, same arguments, same callback shape.
-  Adding a provider is those two files and a registry entry.
+- A mailbox is a **provider**: `gmail`, `outlook`, `hey`, `jmap`, or `imap`, listed in that order because IMAP is the answer for a server the other four do not name and a chooser that opened with it would ask the question backwards. JMAP goes in front of it for that reason and one more — a server speaking both is better read over JMAP, so somebody who has one should meet it before settling for the catch-all. `Provider.js` is the only place that knows the differences — which mailboxes exist, what a query string means, what the service can be asked to do, and how it signs in. Nothing above it branches on a provider id.
+- Two objects make a provider work: something that signs in (`AuthManager`, `OutlookAuth`, `HeyAuth`, `JmapAuth`, `ImapAuth`) and something that fetches (`GmailApiClient`, `HeyClient`, `JmapClient`, `ImapClient`). `MailAccount` builds one pair through a `Loader` and drives them through an identical interface — same method names, same arguments, same callback shape. Adding a provider is those two files and a registry entry.
 - **Every client hands back Gmail's message resource**: a headers array, a MIME
-  tree, part bodies in base64url. That is what lets one list, one reader, one
-  cache and one set of actions serve every provider. `Message.parseRfc822` is
+  tree, part bodies in base64url — and, from a provider whose listing collapses
+  to conversations, a `thread` block on each row (`Message.threadOf`), which
+  every other provider leaves absent and the row reads as a count of 0. That is
+  what lets one list, one reader, one cache and one set of actions serve every
+  provider. `Message.parseRfc822` is
   the adapter that rebuilds that shape from the wire format, and it is worth
   keeping even where IMAP's own structures would have been more natural.
   HEY never serves an RFC 822 message at all, so `HeyClient.toMessage`
@@ -251,10 +247,9 @@ key. What matters while working:
   user has committed to it, with the row already moved. IMAP therefore has no
   "report spam" — moving a message to a Junk folder teaches a server nothing,
   and a button that quietly meant that is a promise the provider cannot keep.
-- An account id is the address for Gmail and `<provider>:<address>` for the
-  others. One address can legitimately be more than one mailbox, and a Gmail
-  account keeping the bare address is what stops an upgrade from having to
-  migrate cache directories, keyring entries and the active account.
+- **A provider's capability list is a ceiling**: an account may refuse one the provider declares and may never add one it does not, which is what the `refusals` argument to `Registry.can` and `Registry.refusal` weighs beside it, and what `Registry.mailboxes` reads to drop a rail row whose role never resolved — so a JMAP server with no Archive mailbox loses the row, the button and the `e` hint together, and says why.
+- **`conversations` is a different question from `threads`**: a server-side thread id does not settle whether the *listing* collapses, so they are two capabilities, and a provider declaring the first gets one row per conversation and a rail of that conversation's members down the side of the reader, walked with `n` and `p`.
+- An account id is the address for Gmail and `<provider>:<address>` for the others, the address lower-cased either way: `hey:you@example.org`, `jmap:you@example.org`, `imap:you@example.org`. One address can legitimately be more than one mailbox, and a Gmail account keeping the bare address is what stops an upgrade from having to migrate cache directories, keyring entries and the active account.
 - Where a message and a mailbox live on the web is a provider question, not
   `MailAccount`'s. `Registry.webMessageUrl` and `webBoxUrl` are that seam; the
   Gmail call that used to sit in `MailAccount` would have opened Gmail for the
@@ -313,6 +308,8 @@ key. What matters while working:
   it base64-encoded on one line of stdin, so a password never reaches the
   process table and nothing needs escaping on the way; the config carrying it
   goes to curl's own stdin rather than to a file that would be on disk.
+- The JMAP transport is `scripts/jmap-transport.sh` beside it — the same curl and the same base64 stdin line, with five verbs and a four-line reply — except `stream`, which holds the event connection open. `scripts/jmap-stream.py` owns curl and bounds each event before forwarding it to the desktop, normalizing CR, LF and CRLF to LF. A QML size check after `SplitParser` is too late: the parser has already buffered the event. Stopping or refusing the stream must also terminate curl.
+- JMAP discovery starts at the address domain’s HTTPS well-known URL, or at the server URL the user supplied. An unauthenticated DNS SRV answer must never authorize a credential destination; an HTTPS probe of the target only authenticates that target, not its relationship to the mailbox domain.
 - **The response comes back base64 too, and that is load-bearing.** IMAP
   measures a literal in octets. Read as UTF-8 text, 2048 octets of a message
   with an accent in it is fewer than 2048 characters, and the parser walks off
@@ -350,9 +347,21 @@ key. What matters while working:
   them: "Sent" is "Sent Items" on Exchange and "[Gmail]/Sent Mail" on Gmail, and
   a client that guessed would create folders rather than find them.
 
+## Review: security is a release-blocking requirement
+
+- Every review includes a separate security verdict: **PASS**, **BLOCK**, or **NOT VERIFIED**. Functional correctness, appearance and passing general tests cannot compensate for a security failure. A change that introduces or leaves its affected security boundary unverified must not be approved or released; name the missing evidence rather than assuming safety.
+- Trace untrusted data from its author to its final consumer: mail headers and bodies, MIME names, server responses, URLs, credentials and persisted settings. Record each decoding, normalization, interpolation and process boundary. Validate the exact bytes consumed, not just a normalized interpretation. Base64 transports bytes; it does not make them safe for shell, curl config, IMAP, HTTP headers or HTML.
+- Every value interpolated into curl config must pass `scripts/curl-config.sh` before any curl process starts. Validate the entire batch, including later commands and recipients. Reject control characters and noncanonical text, including NUL and trailing LF that shell command substitution would otherwise discard. Keep legitimate multiline mail/event bodies out of config values. Quoting a string and escaping backslashes are insufficient; refusing inside the left side of `build_config | curl` is too late.
+- Invoke curl with `-q` as its first argument and `--globoff` so a user's default config and URL expansion cannot silently change the reviewed request. Review redirects, protocol restrictions, TLS verification, credential scope, deadlines and response-size bounds independently. An error or a failure status does not prove no earlier or later request happened.
+- Public-host spelling is not proof of a public destination. For sender-controlled network requests, review raw and decoded URL semantics, DNS answers, the actual connected address, proxies and redirects. `Html.isPublicHost` checks names only; `scripts/public_http.py` rejects non-public DNS answers and binds the connection to a checked numeric address while retaining TLS verification against the original hostname. A preflight lookup followed by independent resolution is not sufficient. No environment switch or production fallback may bypass this policy. Configured mail/CalDAV servers can legitimately be private and have a different trust boundary.
+- Credentials must stay out of argv, logs, world-readable settings and attacker-selected origins. Resource-bearing HTML and attachment paths are security boundaries regardless of which appearance or convenience option enabled them. Never trade these guarantees for compatibility or silently fall back to a less constrained path.
+- Security fixes require regression tests that fail on the vulnerable behavior and verify the forbidden effect did not happen: no process/network request, no credential disclosure, no file write. Cover alternate providers and sibling call sites, CR/LF/CRLF, trailing controls, NUL, malformed encoding and valid inputs with quotes, backslashes, Unicode and legitimate multiline bodies. Use controlled local targets and synthetic credentials; never real mailboxes or secrets.
+- Separate confirmed exploit behavior, a demonstrated boundary violation, and an unverified delivery hypothesis. Report tested runtime versions and environmental gaps. A fabricated Gmail resource is not evidence that Gmail delivers the same bytes; a curl stub is not evidence of curl's parsing or network behavior. Track pre-existing limitations explicitly and do not describe a scoped fix as a complete security audit.
+
 ## Secrets
 
 - Refresh tokens go to GNOME Keyring over stdin, never through a command line.
+- Outlook access tokens reach curl over stdin and its `oauth2-bearer` config option; the account password never enters Omamail.
 - The OAuth client goes to a 0600 file, never to plugin settings: `shell.json`
   is world-readable.
 - Anything that could carry a credential passes through `OAuth.redact` before
@@ -381,14 +390,11 @@ key. What matters while working:
   `XMLHttpRequest` follows a 3xx by itself and re-sends the request, body
   intact, wherever that answer points. Measured, not assumed: a loopback target
   answering `302 Location: /landed` recorded the POST arriving there. So the
-  one-click unsubscribe goes out through `scripts/unsubscribe.sh`, which is
-  curl, which follows nothing unless told to — and a 3xx is reported as a list
-  that did not unsubscribe rather than as an address to chase.
+  one-click unsubscribe goes out through `scripts/unsubscribe.py`, whose HTTP client never follows redirects. A 3xx is reported as a list that did not unsubscribe rather than as an address to chase. No sender-controlled value is interpolated into a shell or curl config.
 - **Qt never fetches a remote message image itself.** Its loader takes no policy
   from QML, follows redirects, and draws a broken placeholder while a resource
-  is pending. Once the reader has allowed images, `scripts/image-fetch.sh`
-  fetches each approved public HTTP(S) source with curl, no redirects, a size
-  ceiling and deadlines. Only a successful supported image comes back as a
+  is pending. Once the reader has allowed images, `scripts/image-fetch.py`
+  fetches each approved public HTTP(S) source through `public_http.py`, with checked DNS answers, pinned connections, no redirects, a size ceiling and a whole-process request deadline covering DNS too. The declared image type must match a supported raster signature; an SVG labelled PNG is refused. Only a successful supported image comes back as a
   `data:` URI; until then the source is absent from both rich documents. Do not
   hand the original remote URL back to Qt or replace this with a QML request,
   because that reopens both redirect SSRF and the loading-placeholder defect.
@@ -514,6 +520,8 @@ key. What matters while working:
   banned paths.
 
 ## Commits and pull requests
+
+- **Every PR that changes UI must include before-and-after screenshots in its description and explain the visible differences.** Label the screenshots clearly and capture the same view, state, window size, theme and scale so reviewers can compare them directly. Cover each changed view or interaction state; update the screenshots when later commits change the UI. Use synthetic or redacted mail data and upload images to GitHub's attachment host, never to the repository. A UI PR without this evidence is not ready for approval; passing tests do not replace the visual comparison.
 
 - **No scope prefix, and this is where the project departs from GPUI Component on purpose.** A title is the imperative outcome and nothing in front of it: `Read a message at a readable size`, not `reader: Read a message at a readable size`.
 

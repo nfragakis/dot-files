@@ -46,6 +46,24 @@ DropArea {
   property string accountId: ""
   // The provider message that this form replaces when it is saved.
   property string sourceDraftId: ""
+  // The sign-off of the mailbox this draft belongs to, read when a draft is
+  // started rather than bound into the editor: the text is the user's to edit
+  // once it is in there, and a binding would overwrite what they had changed.
+  //
+  // The draft's own account, not the active one. `begin` sets `accountId`
+  // first, so a reply owned by B is signed by B even while A is on screen —
+  // otherwise one identity's name and contact details go out over another's.
+  readonly property string accountSignature: root.service
+    ? String(root.service.signatureFor(root.accountId) || "") : ""
+  // The body exactly as `placeBody` left it, plus whether the editor has seen a
+  // user edit. Equality alone is not an edit history: somebody can type and
+  // delete back to the same text. Together they separate an abandoned compose
+  // from a body the user has taken ownership of.
+  property string placedBody: ""
+  property bool bodyWasEdited: false
+  // What it was built from, so it can be built again for another mailbox.
+  property string bodyPrefix: ""
+  property string bodyQuote: ""
   // Both popups reparent themselves into the window overlay, so their state is
   // not reachable by walking this view's children. Named here so the tests can
   // ask whether a control put its own popup away.
@@ -58,6 +76,42 @@ DropArea {
   property string inReplyTo: ""
   property bool ccVisible: false
   property bool bccVisible: false
+  // Where answers should go when that is not the sender. Hidden like Bcc
+  // until asked for: most mail has no use for it.
+  property bool replyToVisible: false
+
+  // The agent's card over this draft: whether it is up, working, or wants
+  // the owner — all facts the window passes down.
+  property bool agentOpen: false
+  property bool agentWorking: false
+  property bool agentAttention: false
+  signal agentRequested(real sceneX, real sceneY)
+
+  // What the agent is handed, and how its answer lands. Replacing the body
+  // counts as an edit — it is one — so the signature is not placed over it.
+  property string draftKey: newDraftKey()
+  function newDraftKey() { return Date.now().toString(36) + "-" + Math.random().toString(36).slice(2) }
+  function currentFields() {
+    return ({ to: toField.text, subject: subjectField.text, body: bodyEdit.text,
+      from: fromEmail, accountId: accountId, draftId: sourceDraftId, draftKey: draftKey })
+  }
+
+  function replaceBody(text) {
+    bodyEdit.remove(0, bodyEdit.length)
+    bodyEdit.insert(0, String(text || ""))
+    bodyWasEdited = true
+    bodyEdit.cursorPosition = bodyEdit.length
+    noteDraftChanged()
+  }
+
+  function insertAtCursor(text) {
+    var insert = String(text || "")
+    if (insert === "") return
+    var at = Math.max(0, Math.min(bodyEdit.length, bodyEdit.cursorPosition))
+    bodyEdit.insert(at, insert)
+    bodyWasEdited = true
+    noteDraftChanged()
+  }
   property string fromEmail: ""
   property var replyRecipients: []
   property bool fromWasChosen: false
@@ -84,6 +138,7 @@ DropArea {
   onInReplyToChanged: noteDraftChanged()
   onCcVisibleChanged: noteDraftChanged()
   onBccVisibleChanged: noteDraftChanged()
+  onReplyToVisibleChanged: noteDraftChanged()
   onFromEmailChanged: noteDraftChanged()
   onDraftAttachmentsChanged: noteDraftChanged()
   onForwardedAttachmentsChanged: noteDraftChanged()
@@ -106,9 +161,13 @@ DropArea {
     return root.service.sendAsAliases
   }
 
+  // Filtered against the mailbox this draft belongs to rather than the visible
+  // one, so a reply raised from a merged list offers the aliases of the
+  // mailbox it arrived in.
   readonly property var fromIdentities: Senders.visible(
     root.service ? root.service.sendIdentities : [],
-    root.service ? String(root.service.activeAccountId || "") : "",
+    root.accountId !== "" ? root.accountId
+      : (root.service ? String(root.service.activeAccountId || "") : ""),
     root.mode)
 
   readonly property bool canChooseFrom: fromIdentities.length > 1
@@ -130,6 +189,7 @@ DropArea {
   }
 
   function clearCurrentDraft(forgetAttachments) {
+    draftKey = newDraftKey()
     forwardLoadSerial++
     fromMenu.close()
     // Both of these live in the window overlay, and this view is hidden rather
@@ -139,8 +199,13 @@ DropArea {
     toField.text = ""
     ccField.text = ""
     bccField.text = ""
+    replyToField.text = ""
     subjectField.text = ""
     bodyEdit.text = ""
+    placedBody = ""
+    bodyWasEdited = false
+    bodyPrefix = ""
+    bodyQuote = ""
     accountId = ""
     sourceDraftId = ""
     mode = "new"
@@ -148,6 +213,7 @@ DropArea {
     inReplyTo = ""
     ccVisible = false
     bccVisible = false
+    replyToVisible = false
     fromEmail = ""
     replyRecipients = []
     fromWasChosen = false
@@ -166,13 +232,34 @@ DropArea {
     if (forgetAttachments) forgetOwned(owned)
   }
 
+  // Rebuilt rather than patched: the signature is not at a known offset once
+  // the quote is under it, and searching for the old one to swap would find a
+  // sign-off the user had quoted from somebody else.
+  function placeBody() {
+    placedBody = bodyPrefix + Mail.composeBody(root.accountSignature, bodyQuote)
+    bodyEdit.text = placedBody
+  }
+
+  // From reaches every mailbox, and choosing one switches the active account
+  // under the open window. The sign-off has to follow it — but only while the
+  // body is still the one placed, or this would overwrite what was typed.
+  onAccountSignatureChanged: {
+    if (!opened || mode === "draft") return
+    if (bodyWasEdited || bodyEdit.text !== placedBody) return
+    placeBody()
+  }
+
   function snapshotDraft() {
     return ({
+      draftKey: draftKey,
       to: toField.text,
       cc: ccField.text,
       bcc: bccField.text,
+      replyTo: replyToField.text,
       subject: subjectField.text,
       body: bodyEdit.text,
+      placedBody: placedBody,
+      bodyWasEdited: bodyWasEdited,
       accountId: accountId,
       sourceDraftId: sourceDraftId,
       mode: mode,
@@ -191,6 +278,7 @@ DropArea {
 
   function restoreDraft(draft) {
     var saved = draft || ({})
+    draftKey = String(saved.draftKey || newDraftKey())
     mode = String(saved.mode || "new")
     accountId = String(saved.accountId || "")
     sourceDraftId = String(saved.sourceDraftId || "")
@@ -198,6 +286,7 @@ DropArea {
     inReplyTo = String(saved.inReplyTo || "")
     ccVisible = saved.ccVisible === true
     bccVisible = saved.bccVisible === true
+    replyToVisible = saved.replyToVisible === true || String(saved.replyTo || "") !== ""
     fromEmail = String(saved.fromEmail || "")
     replyRecipients = Array.isArray(saved.replyRecipients)
       ? saved.replyRecipients.slice() : []
@@ -211,8 +300,11 @@ DropArea {
     toField.text = String(saved.to || "")
     ccField.text = String(saved.cc || "")
     bccField.text = String(saved.bcc || "")
+    replyToField.text = String(saved.replyTo || "")
     subjectField.text = String(saved.subject || "")
     bodyEdit.text = String(saved.body || "")
+    placedBody = String(saved.placedBody || "")
+    bodyWasEdited = saved.bodyWasEdited === true
     opened = true
     rehydrateDraftAttachments()
   }
@@ -302,9 +394,15 @@ DropArea {
 
   // Everyone on the original except this mailbox: replying to yourself is
   // never what reply-all was for.
+  //
+  // "This mailbox" is the one the draft is written from, not the one on
+  // screen. Reading the active account's address dropped the wrong name: a
+  // reply owned by B, to a message addressed to both, kept B on the Cc and
+  // removed A — copying the sender and losing a real recipient.
   function otherRecipients(summary) {
     if (!summary) return ""
-    var mine = String(root.service ? root.service.accountEmail : "").toLowerCase()
+    var mine = String(root.service
+      ? root.service.accountEmailFor(root.accountId) : "").toLowerCase()
     var list = Array.isArray(summary.to) ? summary.to : []
     var kept = []
     for (var i = 0; i < list.length; i++) {
@@ -389,8 +487,14 @@ DropArea {
   function begin(nextMode, summary, bodyText, attachments) {
     clearCurrentDraft(true)
     mode = String(nextMode || "new")
-    accountId = root.service ? String(root.service.activeAccountId || "") : ""
+    // The mailbox the message being answered arrived in, not the one that
+    // happens to be active. In a merged list those differ, and a reply sent
+    // from the wrong mailbox with nothing on screen saying so is the failure
+    // this view most has to avoid. `composeAccountId` is the active account
+    // whenever there is no selection, so a new message is unchanged.
+    accountId = root.service ? String(root.service.composeAccountId || "") : ""
     opened = true
+    var quoted = ""
 
     if (summary && mode !== "new") {
       var replyTo = summary.replyTo && summary.replyTo.email
@@ -417,8 +521,12 @@ DropArea {
           ccVisible = ccField.text !== ""
         }
       }
-      bodyEdit.text = "\n\n" + Mail.quoteBody(summary, String(bodyText || ""))
+      quoted = Mail.quoteBody(summary, String(bodyText || ""))
     }
+
+    bodyPrefix = ""
+    bodyQuote = quoted
+    placeBody()
 
     selectPreferredFrom()
     if (root.service) root.service.refreshRecipientContacts()
@@ -442,8 +550,22 @@ DropArea {
     ccVisible = ccField.text !== ""
     bccField.text = String(values.bcc || "")
     bccVisible = bccField.text !== ""
+    replyToField.text = String(values.replyTo || "")
+    replyToVisible = replyToField.text !== ""
     subjectField.text = String(values.subject || "")
-    bodyEdit.text = String(values.body || "")
+    if (mode === "draft") {
+      // Somebody wrote this and it was saved. None of it was placed, so all of
+      // it is theirs — including the sign-off it already carries.
+      bodyEdit.text = String(values.body || "")
+      placedBody = ""
+      bodyWasEdited = true
+      bodyPrefix = ""
+      bodyQuote = ""
+    } else {
+      bodyPrefix = String(values.body || "")
+      bodyQuote = ""
+      placeBody()
+    }
     var chosenFrom = String(values.from || "")
     if (chosenFrom !== "") {
       fromEmail = chosenFrom
@@ -511,7 +633,8 @@ DropArea {
     if (String(ccField.text || "").trim() !== "") return true
     if (String(bccField.text || "").trim() !== "") return true
     if (String(subjectField.text || "").trim() !== "") return true
-    if (String(bodyEdit.text || "").trim() !== "") return true
+    if ((bodyWasEdited || String(bodyEdit.text || "") !== placedBody)
+      && String(bodyEdit.text || "").trim() !== "") return true
     return allOutgoingAttachments().length > 0
   }
 
@@ -531,6 +654,7 @@ DropArea {
       to: String(draft.to || ""),
       cc: String(draft.cc || ""),
       bcc: String(draft.bcc || ""),
+      replyTo: String(draft.replyTo || ""),
       subject: String(draft.subject || ""),
       body: String(draft.body || ""),
       attachments: attachments,
@@ -629,13 +753,23 @@ DropArea {
     if (!opened || !service) return
     if (forwardAttachmentsLoading || forwardAttachmentError !== "") return
     var accepted = service.send(({
+      // The mailbox this draft belongs to, named rather than inferred. Without
+      // it the service fell back to matching `from` against each account in
+      // turn, so two mailboxes sharing a send-as alias sent B's draft from
+      // whichever of them came first.
+      accountId: root.accountId,
       from: root.fromEmail,
       to: toField.text,
       cc: ccField.text,
       bcc: bccField.text,
+      replyTo: replyToField.text,
       subject: subjectField.text,
       body: bodyEdit.text,
       attachments: root.allOutgoingAttachments(),
+      // The draft this form was opened from, which sending replaces. A save
+      // has always named it; a send dropped it, and the draft stayed in the
+      // list after the message it had become was already gone.
+      draftId: root.sourceDraftId,
       // A forward starts a new conversation; a reply must stay in the old one.
       threadId: root.mode === "forward" ? "" : root.threadId,
       inReplyTo: root.mode === "forward" ? "" : root.inReplyTo
@@ -1004,6 +1138,17 @@ DropArea {
           fontSize: Style.font.caption
           onClicked: root.bccVisible = !root.bccVisible
         }
+
+        Button {
+          id: replyToToggle
+          objectName: "compose-reply-to-toggle"
+          text: "Reply-To"
+          tooltipText: "Ask for answers at another address"
+          foreground: root.replyToVisible ? root.textColor : root.dimColor
+          bordered: false
+          fontSize: Style.font.caption
+          onClicked: root.replyToVisible = !root.replyToVisible
+        }
       }
 
       TextField {
@@ -1229,6 +1374,46 @@ DropArea {
     }
 
     Item {
+      visible: root.replyToVisible
+      width: parent.width
+      implicitHeight: replyToField.implicitHeight + Style.space(14)
+
+      Text {
+        id: replyToLabel
+        anchors.left: parent.left
+        anchors.leftMargin: root.formInset
+        anchors.verticalCenter: parent.verticalCenter
+        width: root.formLabelWidth
+        horizontalAlignment: Text.AlignRight
+        text: "Reply-To"
+        color: root.dimColor
+        font.family: root.panelFontFamily
+        font.pixelSize: Style.font.caption
+      }
+
+      TextField {
+        id: replyToField
+        objectName: "compose-reply-to-field"
+        anchors.left: replyToLabel.right
+        anchors.leftMargin: root.formLabelGap
+        anchors.right: parent.right
+        anchors.rightMargin: Style.space(18)
+        anchors.verticalCenter: parent.verticalCenter
+        foreground: root.textColor
+        accent: root.accentColor
+        font.family: root.panelFontFamily
+        font.pixelSize: Style.font.bodySmall
+        onTextChanged: root.noteDraftChanged()
+      }
+
+      PanelSeparator {
+        anchors.bottom: parent.bottom
+        width: parent.width
+        foreground: root.textColor
+      }
+    }
+
+    Item {
       width: parent.width
       // The field plus the same breathing room it carries inside itself, so
       // its border is not crowded against the rules above and below. Derived
@@ -1391,6 +1576,8 @@ DropArea {
 
     contentItem: ListView {
       id: fromRows
+
+      WheelScroller { view: fromRows }
       implicitHeight: contentHeight
       clip: true
       model: root.fromIdentities
@@ -1477,6 +1664,8 @@ DropArea {
   // window ground; the rows above already carry the structure.
   Flickable {
     id: bodyFlick
+
+    WheelScroller { view: bodyFlick }
     objectName: "compose-body"
     anchors.top: fields.bottom
     anchors.left: parent.left
@@ -1511,6 +1700,7 @@ DropArea {
       font.family: root.panelFontFamily
       font.pixelSize: Style.font.bodySmall
       onTextChanged: root.noteDraftChanged()
+      onTextEdited: root.bodyWasEdited = true
       Keys.priority: Keys.BeforeItem
       Keys.onPressed: root.pasteKey(event)
     }
@@ -1536,6 +1726,8 @@ DropArea {
 
     Flickable {
       id: attachFlick
+
+      WheelScroller { view: attachFlick }
       anchors.fill: parent
       anchors.leftMargin: Style.space(18)
       anchors.rightMargin: Style.space(18)

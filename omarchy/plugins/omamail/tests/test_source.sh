@@ -22,11 +22,15 @@ fail() { printf 'test_source.sh: %s\n' "$1" >&2; exit 1; }
 # is a check nobody runs while writing the code. NUL-separated either way, so a
 # path with a space in it stays one path.
 QML_FILES=()
-while IFS= read -r -d '' found; do QML_FILES+=("$found"); done \
+while IFS= read -r -d '' found; do
+  [ ! -f "$found" ] || QML_FILES+=("$found")
+done \
   < <(git ls-files -z --cached --others --exclude-standard -- '*.qml')
 
 JS_FILES=()
-while IFS= read -r -d '' found; do JS_FILES+=("$found"); done \
+while IFS= read -r -d '' found; do
+  [ ! -f "$found" ] || JS_FILES+=("$found")
+done \
   < <(git ls-files -z --cached --others --exclude-standard -- '*.js' ':!tests/*')
 
 # A developer machine may point /bin/sh at bash while the release runner points
@@ -107,14 +111,35 @@ grep -q 'out.push(escapeMarkup(node.text))' message/Html.js \
 if grep -nE 'Html\.(sanitize|readerTree)\(' components/MessageReader.qml; then
   fail "the reader view must not sanitise a body; the account renders it once"
 fi
-grep -q 'withReader: true' account/MailAccount.qml \
-  || fail "the reading document must come off the same parse as the formatted one"
+grep -q 'withReader: eagerReader' account/MailAccount.qml \
+  || fail "the current reading mode must decide whether reader rebuilding is on the paint path"
+grep -q 'Qt.callLater(function()' account/MailAccount.qml \
+  || fail "a deferred reading document must be completed outside the first paint"
+grep -q 'RenderCache.get(renderCache, selectedId, sourceHtml, withPlainText)' account/MailAccount.qml \
+  || fail "reopening a cached body must reuse its process-local parsed documents"
+grep -q 'RenderCache.put(renderCache, selectedId, sourceHtml, withPlainText, ready)' account/MailAccount.qml \
+  || fail "a parsed body must enter the bounded process-local render cache"
+grep -q 'onAccountIdChanged: renderCache = RenderCache.create(12)' account/MailAccount.qml \
+  || fail "the render cache must not cross account identities"
 grep -q 'remoteImageData: remoteImagesAllowed ? remoteImageData : null' account/MailAccount.qml \
   || fail "Qt must receive prepared image bytes rather than a pending remote source"
-grep -q 'max-redirs = 0' scripts/image-fetch.sh \
-  || fail "the image fetcher must not follow an unchecked redirect"
+grep -q 'command: \["python3", pluginDir + "/scripts/image-fetch.py"\]' account/MailAccount.qml \
+  || fail "remote images must use the public-IP-checked Python transport"
+grep -q 'command: \["python3", account.pluginDir + "/scripts/unsubscribe.py"\]' account/Unsubscribe.qml \
+  || fail "one-click unsubscribe must use the public-IP-checked Python transport"
+# Redirect and DNS policy require behavioral tests, not a matching config line.
+
+# The standing "always show images" answer is an answer about a message
+# somebody chose to read. A preview is the cursor passing over a row, and
+# fetching a picture for one would tell the sender's host that this address
+# opened this mail at this moment — the very thing the reader's own notice
+# says out loud, and the reason the read mark waits for a dwell.
+grep -q 'remoteImagesAllowed = Model.showsRemoteImages(alwaysShowImages, selectionIsPreview)' account/MailAccount.qml \
+  || fail "a message the cursor merely previewed must not fetch the sender's images"
 grep -q 'property string bodyMode: "reader"' Service.qml \
   || fail "a message opens in reading mode"
+grep -q 'bodyMode: root.bodyMode' Service.qml \
+  || fail "each account must know which body representation is on the paint path"
 # Choosing between three readings that were all built when the body arrived is a
 # preference and nothing else. A mode switch that re-rendered would re-run the
 # image policy, and one that re-fetched would tell the sender the mail was
@@ -196,8 +221,22 @@ done
 if grep -n 'modelData\.unread' components/AccountSwitcher.qml; then
   fail "the account switcher must identify mailboxes without count badges"
 fi
-grep -q 'mapToGlobal(0, 0)' components/UserBar.qml \
-  || fail "the account switcher must anchor to the user bar, not the click position"
+if [ -e components/UserBar.qml ] || grep -q 'UserBar {' components/MailboxSidebar.qml; then
+  fail "the account control belongs in the status bar, not the sidebar"
+fi
+grep -q 'objectName: "status-account-button"' App.qml \
+  || fail "the status address must be the account switcher trigger"
+grep -q 'selected: accountSwitcher.opened' App.qml \
+  || fail "the status account trigger must stay selected while its popup is open"
+grep -q 'accountSwitcher.openAt(scene.x, scene.y)' App.qml \
+  || fail "the account switcher must anchor to the status address"
+awk '
+  /id: accountBackground/ { in_background = 1 }
+  in_background && /anchors.margins: Style.space\(2\)/ { found = 1 }
+  in_background && /^            }/ { exit !found }
+  END { exit !found }
+' App.qml \
+  || fail "the status account hover must use the same visual inset as the sidebar toggle"
 awk '
   /id: footer$/ { in_footer = 1 }
   in_footer && /anchors.leftMargin: Style.space\(8\)/ { left = 1 }
@@ -285,10 +324,12 @@ grep -q 'setUndoSendSeconds' components/SettingsPage.qml \
   || fail "the in-app settings page must save the undo window"
 
 # The IMAP server disclosure always reserves an icon slot. Both names selected
-# by its state must have a drawing, or the slot is blank in one or both states.
+# by its state must have a glyph, or the slot is blank in one or both states.
+# (tests/test_icons.js checks every name the views use; this is the pair a
+# state machine selects at runtime, which a literal scan cannot see.)
 for icon in chevronLeft chevronRight chevronDown mail; do
-  if ! grep -q "root.name === \"$icon\"" components/ActionIcon.qml; then
-    fail "ActionIcon does not draw the $icon icon"
+  if ! grep -qE "^  $icon: 0x" components/Icons.js; then
+    fail "Icons.js does not define the $icon icon"
   fi
 done
 grep -q 'text: "Week"' components/CalendarView.qml \
@@ -305,7 +346,9 @@ right = text.index('anchors.right: parent.right')
 if today > right:
     raise SystemExit("test_source.sh: Go to today must sit with the date on the left")
 today_block = text[today:text.index('}', today)]
-if 'bordered: false' not in today_block:
+# A ghost: no box at rest. `ghost: true` is the icon buttons' look; a plain
+# `bordered: false` is the older text-only form and still counts.
+if 'ghost: true' not in today_block and 'bordered: false' not in today_block:
     raise SystemExit("test_source.sh: Go to today must be a text-only action")
 if 'iconName: "refresh"' in text:
     raise SystemExit("test_source.sh: calendar refresh belongs in the window header")
@@ -362,19 +405,33 @@ composer = Path("components/CalendarEventComposer.qml").read_text()
 if "controller.writableSourceGroups" not in composer:
     raise SystemExit("test_source.sh: event creation must offer writable calendars from the selected calendar view")
 PY
-grep -q 'text: "Create event\.\.\."' App.qml \
-  || fail "calendar mode needs a Create event... header action"
+python3 - <<'PY'
+from pathlib import Path
+
+text = Path("App.qml").read_text()
+header = text[text.index("id: headerRight"):text.index("PanelSeparator {", text.index("id: headerRight"))]
+if "spacing: Style.space(8)" not in header:
+    raise SystemExit("test_source.sh: refresh needs breathing room before the header action")
+for name in ("create-event-button", "compose-button"):
+    marker = 'objectName: "' + name + '"'
+    start = text.index(marker)
+    opening = text.rfind("\n          Button {", 0, start)
+    if opening < 0:
+        raise SystemExit("test_source.sh: " + name + " must use a normal text button")
+    block = text[opening:text.index("\n          }", start)]
+    if "iconName:" in block:
+        raise SystemExit("test_source.sh: " + name + " must not carry an icon")
+PY
 python3 - <<'PY'
 from pathlib import Path
 
 sidebar = Path("components/MailboxSidebar.qml").read_text()
 footer = sidebar[sidebar.index("id: footer"):sidebar.index("component Entry:")]
 if 'label: "Calendar"' not in footer or "calendarRequested" not in footer:
-    raise SystemExit("test_source.sh: Calendar must be fixed above the sidebar account row")
+    raise SystemExit("test_source.sh: Calendar must stay fixed at the foot of the sidebar")
 calendar = footer.index('label: "Calendar"')
-separator = footer.index("PanelSeparator", calendar)
-if "Style.space(6)" not in footer[calendar:separator]:
-    raise SystemExit("test_source.sh: Calendar must keep a gap above the account separator")
+if "Style.space(6)" not in footer[calendar:]:
+    raise SystemExit("test_source.sh: Calendar must keep breathing room at the sidebar foot")
 
 app = Path("App.qml").read_text()
 sidebar_use = app[app.index("id: sidebar"):app.index("MailboxTabs {")]
@@ -500,7 +557,10 @@ if awk '
 ' components/CalendarView.qml; then
   fail "activating a calendar event must not jump to its provider"
 fi
-grep -q 'calendarView.detailOpen' App.qml \
+# The overview is an entry on the navigation stack, so Back reaches it before
+# the calendar under it; `back()` asks the view to close it and the view's own
+# change pops the entry.
+grep -q 'leaving.kind === "calendarDetail"' App.qml \
   || fail "Escape must close the native calendar event overview first"
 if grep -q 'Shortcut { sequence: "Escape"' components/CalendarEventComposer.qml; then
   fail "event creation must use the central Escape route, not an ambiguous duplicate"
@@ -585,17 +645,43 @@ for client in providers/GmailApiClient.qml providers/HeyClient.qml providers/Ima
   grep -q 'function getMessages(ids, full, callback, existingHandle, progress)' "$client" \
     || fail "$client must expose the shared progressive list interface"
 done
+# The conversation rail asks every client for the members of the open thread and
+# draws whatever comes back. A provider that does not collapse its listing has
+# nothing to say and answers with an empty list — but it has to answer, or the
+# reader would need to know which provider it is looking at.
+for client in providers/GmailApiClient.qml providers/HeyClient.qml \
+    providers/ImapClient.qml providers/JmapClient.qml; do
+  grep -q 'function getSummaries(ids, callback)' "$client" \
+    || fail "$client must expose the shared conversation-member interface"
+done
+# A member is a message and a stop must tell the truth about that message. A
+# thread block speaks for the whole conversation, so putting one on a member
+# would draw a stop bold because a different message in the thread is unread.
+awk '
+  /function getSummaries\(/ { in_members = 1 }
+  in_members && /withThreadBlock/ { exit 1 }
+  in_members && /^  function getMessages\(/ { exit 0 }
+  END { exit 0 }
+' providers/JmapClient.qml \
+  || fail "a conversation member must not be given the row's thread block"
 grep -q 'if (ids.length > 0) progress({' providers/ImapClient.qml \
   || fail "IMAP search windows must report ids before the final page"
-grep -q 'Imap\.uidCeilingCommand()' providers/ImapClient.qml \
+grep -q 'Imap\.topUidCommand(count)' providers/ImapClient.qml \
   || fail "interactive IMAP search must not wait for the complete UID snapshot"
+! grep -q '"[A-Z ]*FETCH \*:\*' providers/ImapProtocol.js providers/ImapClient.qml \
+  || fail "curl drops the untagged answer to a one-message FETCH: read the ceiling numerically"
 grep -q 'Imap\.searchCommands(criteria, snapshot, nextUid)' providers/ImapClient.qml \
   || fail "a sparse interactive search must reuse a UID snapshot after its first window"
 grep -q 'streamedSummaryBatch' providers/ImapClient.qml \
   || fail "streamed IMAP results must fetch headers in visible batches"
 grep -q 'fetchQueue\.push(wanted)' account/MailAccount.qml \
   || fail "streamed metadata reads need one shared queue"
-grep -q 'if (index >= 0 && listLoading)' account/MailAccount.qml \
+awk '
+  /function act\(/ { in_act = 1 }
+  in_act && /^    stopLiveList\(\)/ { stopped = 1 }
+  in_act && /if \(removed\) messages = Model\.removeById\(messages, rowId\)/ { exit !stopped }
+  END { exit !stopped }
+' account/MailAccount.qml \
   || fail "an action must stop a live list before stale snapshots can settle"
 grep -q 'pendingAction !== "" && cacheKey === pendingActionQuery' account/MailAccount.qml \
   || fail "an action may only suppress refreshes for its own query"
@@ -605,11 +691,11 @@ grep -q 'resumeDeferredListLoad(actionQuery' account/MailAccount.qml \
   || fail "an action callback must resume a deferred navigation load"
 awk '
   /function act\(/ { in_act = 1 }
-  in_act && /if \(pendingAction !== ""\)/ { guarded = 1 }
-  in_act && /pendingAction = action/ { exit !guarded }
-  END { exit !guarded }
+  in_act && /function dispatch\(\)/ { in_dispatch = 1 }
+  in_act && /pendingAction = action/ { exit !in_dispatch }
+  END { exit !in_dispatch }
 ' account/MailAccount.qml \
-  || fail "a second row action must not overwrite the pending action slot"
+  || fail "only the send may take the pending action slot; a queued action must not"
 awk '
   /function markAllRead\(\)/ { in_mark_all = 1 }
   in_mark_all && /if \(pendingAction !== ""\)/ { guarded = 1 }
@@ -633,26 +719,93 @@ grep -q 'var invalidatesPage = !survives || opaqueQuery' account/MailAccount.qml
   || fail "paging membership must not follow the reader's keep-open decision"
 grep -q 'if (!service.act(acted, action)) return false' App.qml \
   || fail "a refused action must not move the keyboard cursor"
-grep -q 'queueQuietAction(messageId, action, cacheKey)' account/MailAccount.qml \
-  || fail "automatic mark-read must wait rather than disappear behind another action"
+# Clearing a mailbox means pressing the same key down a list faster than any
+# server answers. Refusing the second press dropped it: the message stayed, the
+# note blamed the user for a failure they had not caused, and the false return
+# held the keyboard cursor on a row the user had already left behind. Queueing
+# the whole action was not enough either: the row moves at the keystroke.
 awk '
-  /function runQueuedQuietAction\(\)/ { in_quiet = 1 }
-  in_quiet && /listSerial\+\+/ { interrupts = 1 }
-  in_quiet && /root\.loadMessages\(false, true/ { reloads = 1 }
-  /function act\(/ { exit !(interrupts && reloads) }
-  END { exit !(interrupts && reloads) }
+  /function act\(/ { in_act = 1 }
+  in_act && /if \(removed\) messages = Model\.removeById\(messages, rowId\)/ { moved = 1 }
+  in_act && /if \(slotTaken\) queueAction\(messageId, action, actionQuery, quiet === true, oneMessage, dispatch, discard\)/ { exit !moved }
+  END { exit !moved }
 ' account/MailAccount.qml \
-  || fail "a detached quiet action must stop and revalidate its query stream"
+  || fail "an action taken while one is pending must move its row before its send waits"
+# Scoped to `act`. `markAllRead` still refuses on purpose: it reads the unread
+# set at the moment it runs, so one queued behind a mutation would send a list
+# the mailbox had already moved past.
+awk '
+  /function act\(/ { in_act = 1 }
+  in_act && /Another action is still finishing/ { refuses = 1 }
+  in_act && /var index = Model\.indexById\(messages, messageId\)/ { exit refuses }
+  END { exit refuses }
+' account/MailAccount.qml \
+  || fail "a queued action must not report a failure the user did not cause"
+# A queued request is a send, not a verb to run through `act` again: its row
+# has already left.
+awk '
+  /function runQueuedAction\(\)/ { in_queued = 1 }
+  in_queued && /request\.dispatch\(\)/ { dispatches = 1 }
+  /function refuseUnavailableAction\(/ { exit !dispatches }
+  END { exit !dispatches }
+' account/MailAccount.qml \
+  || fail "a queued action must run the send it was taken with"
+grep -q 'dispatch: previous.dispatch' account/Model.js \
+  || fail "coalescing a repeated action must keep the send that carries its rollback"
+# A queued send runs inside the callback that freed the slot, which may just
+# have resumed this query's list.
+awk '
+  /function dispatch\(\)/ { in_dispatch = 1 }
+  in_dispatch && /stopLiveList\(\)/ { interrupts = 1 }
+  in_dispatch && /if \(slotTaken\)/ { exit !interrupts }
+  END { exit !interrupts }
+' account/MailAccount.qml \
+  || fail "a queued send must stop a live list before stale snapshots can settle"
+# The slot is retaken before the freeing answer is acted on, so no reload
+# settles a state the next edit is not in yet.
+awk '
+  /function act\(/ { in_act = 1 }
+  in_act && /var done = function/ { in_done = 1 }
+  in_done && /root\.runQueuedAction\(\)/ { drains = 1 }
+  in_done && /resumeDeferredListLoad\(actionQuery/ { exit !drains }
+  END { exit !drains }
+' account/MailAccount.qml \
+  || fail "an action callback must send the next queued action before it revalidates"
 test "$(grep -c 'root.active && root.cacheKey !== actionQuery' account/MailAccount.qml)" -ge 2 \
   || fail "successful actions must revalidate a mailbox opened while they were pending"
 awk '
-  /function markAllRead\(\)/ { in_mark_all = 1 }
-  in_mark_all && /if \(interrupted\)/ { saw_interrupt = 1 }
-  in_mark_all && /root\.loadMessages\(false, true, error\)/ { saw_retry = 1 }
-  in_mark_all && /^  }/ { exit !(saw_interrupt && saw_retry) }
+  /function run\(/ { in_bulk = 1 }
+  in_bulk && /^    stopLiveList\(\)/ { saw_interrupt = 1 }
+  in_bulk && /account\.loadMessages\(false, true, note\)/ { saw_retry = 1 }
+  in_bulk && /^  }/ { exit !(saw_interrupt && saw_retry) }
   END { exit !(saw_interrupt && saw_retry) }
-' account/MailAccount.qml \
-  || fail "mark-all must stop and revalidate a live list too"
+' account/BatchAction.qml \
+  || fail "a bulk action must stop and revalidate a live list too"
+# The batch is one more producer on the same queue and one more completion
+# that drains it: taken while a send holds the slot it moves its rows now and
+# queues its own send; answered, it sends the next queued action before it
+# acts on its answer, so an action taken behind it is never left waiting.
+grep -q 'if (slotTaken) account.queueAction(listed.join(","), action, actionQuery, false, false, dispatch, discard)' account/BatchAction.qml \
+  || fail "a batch taken while a send holds the slot must queue its send, not run through act"
+awk '
+  /var done = function/ { in_done = 1 }
+  in_done && /account\.runQueuedAction\(\)/ { drains = 1 }
+  in_done && /if \(error\)/ { exit !drains }
+  END { exit !drains }
+' account/BatchAction.qml \
+  || fail "a batch callback must send the next queued action before it acts on its answer"
+# A refused bulk edit comes off row by row through the same intents a single
+# edit holds, never as a snapshot of the list put back over the edits taken
+# behind it: a star pressed while mark-all was still deciding stays.
+for bulk in account/MailAccount.qml account/BatchAction.qml; do
+  grep -q 'intents\.restore(edits\[e\], lists)' "$bulk" \
+    || fail "$bulk must settle a refused bulk edit through its intents"
+done
+if awk '/function markAllRead\(\)/ { in_mark_all = 1 } in_mark_all && /root\.messages = before/ { found = 1 } END { exit !found }' account/MailAccount.qml; then
+  fail "mark-all must not put a snapshot of the list back over later edits"
+fi
+grep -q 'return batchAction.run(ids, action)' account/MailAccount.qml \
+  || fail "the account must hand its batch to BatchAction"
 grep -q 'root\.loadMessages(false, true, error)' account/MailAccount.qml \
   || fail "a failed action must resume the list without losing its error"
 grep -q 'root\.loadMessages(false, true, "")' account/MailAccount.qml \
@@ -685,7 +838,7 @@ grep -q 'MAX_SUMMARIES_PER_QUERY' cache/Cache.js \
 
 # New-mail notifications use the application's own mark, not the desktop's
 # generic unread-mail glyph.
-grep -q 'root\.pluginDir + "/assets/omamail\.svg"' account/MailAccount.qml \
+grep -q 'assets/omamail.svg' scripts/notify-mail.py \
   || fail "new-mail notifications need the Omamail app icon"
 [ -f assets/omamail.svg ] || fail "the notification app icon is missing"
 
@@ -787,7 +940,7 @@ grep -q 'accountId = Accounts.accountId(accountEmail, providerId)' account/MailA
 # for actual links such as URLs inside the message reader.
 for file in components/IconButton.qml components/IconTextButton.qml components/AppMenu.qml \
   components/MessageMenu.qml components/AccountSwitcher.qml components/ProviderPicker.qml \
-  components/MailboxSidebar.qml components/UserBar.qml; do
+  components/MailboxSidebar.qml; do
   if grep -n 'PointingHandCursor' "$file"; then
     fail "$file uses a web-link cursor for a native control"
   fi
@@ -806,8 +959,22 @@ grep -q 'text: "Add a mailbox\.\.\."' components/SettingsPage.qml \
   || fail "Add a mailbox opens a workflow and needs an ellipsis"
 grep -q 'tooltipText: "Add another mail account"' components/SettingsPage.qml \
   || fail "the add-account tooltip must be provider-neutral"
+python3 - <<'PY'
+from pathlib import Path
+
+menu = Path("components/AppMenu.qml").read_text()
+calendar = menu.index("id: calendarRow")
+settings = menu.index("id: settingsRow")
+switch = menu.index("id: switchRow")
+separator = menu.index("MenuSeparatorLine {", switch)
+if not calendar < switch < settings < separator:
+    raise SystemExit("test_source.sh: Settings must stay with the account actions below Calendar")
+settings_block = menu[settings:menu.index("}", settings)]
+if 'text: "Settings..."' not in settings_block:
+    raise SystemExit("test_source.sh: Settings opens an extra page and needs an ellipsis")
+PY
 if awk '
-  /id: accountLine/ { in_status = 1 }
+  /id: accountControl/ { in_status = 1 }
   in_status && /resultSummary/ { exit 0 }
   in_status && /^        }/ { exit 1 }
   END { exit 1 }
@@ -830,6 +997,27 @@ for file in components/AppMenu.qml components/MessageMenu.qml; do
     fail "$file duplicates the shared menu-row presentation"
   fi
 done
+
+# A row that is drawn but left out of `menuRows` is mouse-only: the cursor is an
+# index into that array, so j and k step over the row, Enter can never reach it,
+# and `MenuActionRow.selected` never matches. "Move to Inbox" was added to the
+# column and left out of the array.
+python3 - <<'MENUROWS'
+import re
+from pathlib import Path
+
+for name in ("components/AppMenu.qml", "components/MessageMenu.qml"):
+    source = Path(name).read_text()
+    listed = re.search(r"property var menuRows: \[(.*?)\]", source, re.S)
+    if not listed:
+        raise SystemExit("test_source.sh: %s must list its rows in menuRows" % name)
+    known = set(re.findall(r"[A-Za-z_][A-Za-z0-9_]*", listed.group(1)))
+    drawn = re.findall(r"MenuRow \{\s*id: ([A-Za-z_][A-Za-z0-9_]*)", source)
+    missing = [row for row in drawn if row not in known]
+    if missing:
+        raise SystemExit("test_source.sh: %s draws %s without listing it in menuRows"
+                         % (name, ", ".join(missing)))
+MENUROWS
 
 # Feature views receive semantic colours from App. Reading theme roles locally
 # makes the same concept drift between pages and prevents App from naming it.
@@ -941,6 +1129,7 @@ limit=$((128 * 1024))
 preview_limit=$((384 * 1024))
 oversized=$(git ls-files -z \
   | xargs -0 -I{} sh -c '
+      [ -f "{}" ] || exit 0
       case "{}" in
         preview.png) ceiling='"$preview_limit"' ;;
         *) ceiling='"$limit"' ;;
@@ -967,8 +1156,8 @@ grep -q 'function beginDraft' components/ComposeView.qml \
   || fail "ComposeView must fill a new draft from a mailto"
 grep -q 'omarchy-shell shell summon' scripts/mailto.sh \
   || fail "the mailto handler must summon Omamail, not toggle it"
-grep -q 'install-mailto.sh' install.sh \
-  || fail "install.sh must register the mailto desktop handler"
+grep -q 'register-mailto.sh' scripts/link-plugin.sh \
+  || fail "link-plugin.sh must register the mailto desktop handler"
 grep -q 'registerMailtoHandler' Service.qml \
   || fail "the service must register the mailto handler when the plugin loads"
 grep -q 'bcc: Mail.headerFrom(parsed.headers, "Bcc")' providers/HeyClient.qml \
@@ -1042,4 +1231,98 @@ if "FileDialog" in block or "execDetached" in block:
     )
 PY
 
+# The JMAP transport script builds the credential itself: `user = "name:secret"`
+# for Basic and an Authorization header for Bearer, and it refuses any other
+# scheme before curl runs. QML assembling one would be a second place the rule
+# lived, and the one that could get it wrong without a shell test noticing —
+# the script's own tests assert the config bytes, and nothing asserts a header
+# QML wrote.
+python3 - <<'PY1'
+from pathlib import Path
+import re
+
+for name in ("providers/JmapClient.qml", "providers/JmapAuth.qml",
+             "components/JmapSetupPage.qml"):
+    # Comments say what the rule is; only code can break it.
+    code = re.sub(r"//[^\n]*", "", Path(name).read_text())
+    for literal in re.findall(r'"(?:[^"\\]|\\.)*"', code):
+        if re.search(r"Authorization|Basic |Bearer ", literal):
+            raise SystemExit(
+                "test_source.sh: the JMAP transport builds the credential; "
+                + name + " must never assemble an Authorization value: " + literal
+            )
+PY1
+
+# The secret is an app password or an API token and it lives in the keyring.
+# accounts.json is world-readable, so the settings a JMAP account keeps are the
+# four things sign-in learned and nothing that could authenticate with them.
+python3 - <<'PY2'
+from pathlib import Path
+import re
+
+source = Path("account/Accounts.js").read_text()
+start = source.index("function makeJmapSettings(raw)")
+end = source.index("\nfunction ", start + 1)
+block = source[start:end]
+for word in ("secret", "password", "token"):
+    if re.search(word, block, re.I):
+        raise SystemExit(
+            "test_source.sh: a JMAP account's settings must not carry a credential: " + word
+        )
+PY2
+
+python3 - <<'UNIFIEDCAPS'
+import re
+from pathlib import Path
+
+source = Path("Service.qml").read_text()
+
+# A merged list may offer only what every mailbox in it can honour, and a
+# mailbox is not its provider: a host narrows the provider by the refusals its
+# server reported and the mailboxes it turned out not to have. Asking the
+# provider ids reintroduced an Archive button for an account whose own view
+# hides it, so the intersection is taken over the hosts' own answers.
+block = re.search(r"readonly property var unifiedAbilities: \{(.*?)\n  \}", source, re.S)
+if not block:
+    raise SystemExit("test_source.sh: the merged capabilities must be read off the hosts "
+                     "(`unifiedAbilities`), not derived from provider ids")
+for verb in ("canArchive", "canReportSpam", "canStar", "hasLabels",
+             "canOpenOnWeb", "canMove", "showsConversations", "mailboxes"):
+    if "host." + verb not in block.group(1):
+        raise SystemExit("test_source.sh: `unifiedAbilities` must read host.%s, "
+                         "or a mailbox's own refusal is dropped in a merged list" % verb)
+
+for name in ("canArchive", "canReportSpam", "canStar", "hasLabels", "canOpenOnWeb"):
+    offered = re.search(r"readonly property bool " + name + r": unified\s*\n\s*\?([^\n]*)",
+                        source)
+    if not offered or "unifiedAbilities" not in offered.group(1):
+        raise SystemExit("test_source.sh: %s in a merged list must intersect "
+                         "`unifiedAbilities`" % name)
+
+if re.search(r"Unified\.(sharedCapability|sharedMailboxes|hasSharedMailbox)\b", source):
+    raise SystemExit("test_source.sh: the provider-only intersection is gone; "
+                     "use `Unified.everyMailboxCan` / `sharedMailboxRows`")
+UNIFIEDCAPS
+
 printf 'test_source.sh ok\n'
+
+# A preview is drawn the same as an open and must be marked read differently.
+# The gate is one condition in the detail callback and it has no unit test that
+# can reach it — the panel-level test asserts only that a flag was passed.
+python3 - <<'PREVIEWREAD'
+import re
+from pathlib import Path
+
+source = Path("account/MailAccount.qml").read_text()
+
+# The read mark on arrival must ask whether this was a preview. The decision
+# itself lives in `Model.marksReadOnArrival`, where it is unit-tested; what is
+# guarded here is that the call site still asks it.
+mark = re.search(r"if \(Model\.marksReadOnArrival\([^)]*\)\)\s*\n?\s*root\.act\([^)]*markRead",
+                 source)
+if not mark:
+    raise SystemExit("test_source.sh: MailAccount must mark an opened message read")
+if "selectionIsPreview" not in mark.group(0):
+    raise SystemExit("test_source.sh: the read mark on arrival must skip a preview "
+                     "(`root.selectionIsPreview`), or stepping a list reads it")
+PREVIEWREAD

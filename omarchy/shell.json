@@ -37,6 +37,9 @@
           "id": "omarchy.tray"
         },
         {
+          "id": "io.github.aryan-techie.todoist"
+        },
+        {
           "id": "omamail",
           "defaultQuery": "in:inbox category:primary"
         },

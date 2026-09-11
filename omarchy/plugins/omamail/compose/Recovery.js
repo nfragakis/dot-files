@@ -50,8 +50,15 @@ function draft(value) {
     to: text(row.to),
     cc: text(row.cc),
     bcc: text(row.bcc),
+    replyTo: text(row.replyTo),
     subject: text(row.subject),
     body: text(row.body),
+    // What the compose window placed in the body rather than what was typed
+    // into it. A row written before this existed has none, which reads as an
+    // empty string — so any body at all differs from it, and a recovered draft
+    // from the previous build is still offered back.
+    placedBody: text(row.placedBody),
+    bodyWasEdited: row.bodyWasEdited === true,
     accountId: text(row.accountId),
     sourceDraftId: text(row.sourceDraftId),
     mode: text(row.mode) || "new",
@@ -59,6 +66,7 @@ function draft(value) {
     inReplyTo: text(row.inReplyTo),
     ccVisible: row.ccVisible === true,
     bccVisible: row.bccVisible === true,
+    replyToVisible: row.replyToVisible === true,
     fromEmail: text(row.fromEmail),
     replyRecipients: people(row.replyRecipients),
     fromWasChosen: row.fromWasChosen === true,
@@ -74,7 +82,10 @@ function hasMeaningfulDraft(value) {
   if (text(row.cc).trim() !== "") return true
   if (text(row.bcc).trim() !== "") return true
   if (text(row.subject).trim() !== "") return true
-  if (text(row.body).trim() !== "") return true
+  // Equality alone cannot say whether somebody typed and then deleted back to
+  // the placed text, so preserve that edit history beside the original body.
+  if ((row.bodyWasEdited === true || text(row.body) !== text(row.placedBody))
+      && text(row.body).trim() !== "") return true
   if (Array.isArray(row.forwardedAttachments) && row.forwardedAttachments.length > 0)
     return true
   return Array.isArray(row.draftAttachments) && row.draftAttachments.length > 0

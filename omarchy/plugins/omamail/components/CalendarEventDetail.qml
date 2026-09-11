@@ -87,6 +87,10 @@ Rectangle {
   }
 
   Flickable {
+    id: detailFlick
+
+    WheelScroller { view: detailFlick }
+
     anchors.fill: parent
     anchors.margins: Style.space(18)
     contentWidth: width
@@ -239,7 +243,7 @@ Rectangle {
         IconTextButton {
           visible: root.canWrite
           text: "Edit..."
-          iconName: "compose"
+          iconName: "edit"
           foreground: root.textColor
           accent: root.eventColor
           fontFamily: root.panelFontFamily

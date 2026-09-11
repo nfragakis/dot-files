@@ -52,6 +52,21 @@ function byId(id) {
 })
 
 const undoSend = byId("undoSend")
+assert.strictEqual(keymap.contextFor({ assistantEditing: true, assistantCommands: true, composing: true }), "assistantCommands")
+assert.strictEqual(keymap.contextFor({ assistantEditing: true, assistantCommands: false, composing: true }), "assistant")
+assert.strictEqual(keymap.contextFor({ assistantEditing: false, assistantCommands: true, composing: true }), "compose")
+deepEqual(byId("assistantSend").keys, ["Return", "Enter", "Ctrl+Return", "Ctrl+Enter"])
+deepEqual(byId("assistantChooseCommand").keys, ["Return", "Enter"])
+assert.ok(!keymap.sequencesFor("assistant").some(entry => ["Up", "Down"].includes(entry.sequence)))
+for (const key of ["Return", "Enter"]) {
+  assert.strictEqual(keymap.sequencesFor("assistant").find(entry => entry.sequence === key).id, "assistantSend")
+  assert.strictEqual(keymap.sequencesFor("assistantCommands").find(entry => entry.sequence === key).id, "assistantChooseCommand")
+  for (const context of ["assistant", "assistantCommands"]) {
+    assert.ok(!keymap.sequencesFor(context).some(entry => entry.sequence === "Shift+" + key))
+  }
+}
+assert.ok(keymap.sequencesFor("assistantCommands").some(entry => entry.id === "assistantCommandDown" && entry.sequence === "Down"))
+assert.ok(!keymap.sequencesFor("compose").some(entry => entry.id === "assistantSend"))
 assert.ok(undoSend, "the delayed-send state offers an undo action")
 assert.strictEqual(keymap.displayFor(undoSend), "Alt+Z")
 keymap.CONTEXTS.forEach(function (context) {
@@ -96,8 +111,10 @@ assert.strictEqual(keymap.isEnabled(help, "list", true), true,
 
 // Search remains reachable while a field owns ordinary typing.
 assert.strictEqual(keymap.isEnabled(byId("searchAnywhere"), "compose", false), true)
+// A bare question mark belongs to mailbox navigation, never text entry.
+deepEqual(help.keys, ["?", "Ctrl+/", "Ctrl+?"])
 assert.strictEqual(keymap.isSequenceEnabled(help, "?", "compose", false), false,
-  "the old bare help key remains mailbox-only")
+  "a question mark remains text inside a draft")
 assert.strictEqual(keymap.isSequenceEnabled(help, "?", "list", false), true)
 assert.strictEqual(byId("helpAnywhere"), undefined,
   "one help action must render as one row")
@@ -110,6 +127,20 @@ assert.strictEqual(keymap.isEnabled(settings, "calendar", false), true,
   "settings must open from the calendar")
 assert.strictEqual(keymap.isEnabled(settings, "page", false), true,
   "the settings route is available from every screen")
+
+// Checking for mail answers to the browser's reload chord as well as its key.
+// Ctrl+R is a modified sequence, so it is live while a query or a draft is
+// being typed, where a bare `r` is a letter and stays reply's.
+deepEqual(byId("refresh").keys, ["F5", "Ctrl+R"],
+  "F5 and Ctrl+R both check for mail")
+// Through the table the router instantiates from, not `isSequenceEnabled`,
+// which answers for any sequence whether or not the row binds it.
+keymap.CONTEXTS.forEach(function (context) {
+  var live = keymap.sequencesFor(context).some(function (entry) {
+    return entry.id === "refresh" && entry.sequence === "Ctrl+R"
+  })
+  assert.strictEqual(live, true, "Ctrl+R must check for mail from " + context)
+})
 
 const zoomIn = byId("zoomIn")
 assert.strictEqual(keymap.isEnabled(zoomIn, "reader", false), true)
@@ -250,7 +281,7 @@ assert.strictEqual(keymap.hintKeyFor(byId("archive")), "e",
 
 const listHints = keymap.hintsFor("list")
 deepEqual(listHints.map(function (h) { return h.key + " " + h.label }),
-  ["j / k move", "o open", "e archive", "c compose"],
+  ["j / k move", "o open", "e archive", "d trash", "Space select", "c compose"],
   "the status bar offers what the list can do, in its short form")
 const composeHints = keymap.hintsFor("compose")
 deepEqual(composeHints.map(function (h) { return h.label }),
@@ -353,6 +384,22 @@ for (const count of [1, 2, 3, 4]) {
   assert.ok(heaviest <= Math.ceil(totalWeight / count) + 6,
     count + ": no column runs away with the sheet (" + heaviest + ")")
 }
+
+// `v` is Gmail's own move key, which is what issue #58 asks these to match.
+// `m` mutes there, so a move on `m` would be the one binding somebody arriving
+// from Gmail has to unlearn -- pinned here because "it was free" is exactly the
+// reasoning that would put it back.
+const move = keymap.BINDINGS.filter(b => b.id === "moveToLabel")
+assert.strictEqual(move.length, 1, "one move row")
+deepEqual(move[0].keys, ["v"], "Gmail moves with v")
+assert.ok(keymap.BINDINGS.every(b => b.keys.indexOf("m") < 0 || b.contexts.indexOf("calendar") >= 0),
+  "m stays out of the mailbox, where Gmail means mute by it")
+
+// Bound where a message is, and nowhere else: the calendar has no message to
+// move, and a row added to the wrong context list would bind it there silently.
+deepEqual(keymap.bindingsFor("list").filter(b => b.id === "moveToLabel").length, 1)
+deepEqual(keymap.bindingsFor("reader").filter(b => b.id === "moveToLabel").length, 1)
+deepEqual(keymap.bindingsFor("calendar").filter(b => b.id === "moveToLabel").length, 0)
 
 // A count that is not a count still has to draw something.
 deepEqual(keymap.helpColumns(0), [keymap.helpGroups()])

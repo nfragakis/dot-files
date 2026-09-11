@@ -2,10 +2,11 @@
   "schemaVersion": 1,
   "id": "omamail",
   "name": "Omamail",
-  "version": "0.7.0",
-  "author": "Jason Lee <huacnlee@gmail.com>",
+  "version": "0.8.2",
+  "author": "huacnlee",
   "license": "MIT",
-  "description": "Email client for Omarchy: read, triage, and reply to Gmail, HEY and any IMAP mailbox in a native window. Fastmail, iCloud, Outlook, Zoho, or your own server.",
+  "homepage": "https://huacnlee.github.io/omamail/",
+  "description": "Email client for Omarchy: read, triage, and reply to Gmail, HEY and any JMAP or IMAP mailbox in a native window. Fastmail, iCloud, Outlook, Zoho, Proton Bridge, or your own server — several accounts at once, each with its own inbox and unread count. Keyboard-first, three columns when there is room and one when there is not, and it follows your theme. Meeting invitations are drawn as meetings you can answer, newsletters unsubscribe in one click, and remote images stay blocked until you ask.",
   "kinds": [
     "service",
     "bar-widget",
@@ -19,7 +20,7 @@
   },
   "barWidget": {
     "displayName": "Omamail",
-    "description": "Unread mail count in the bar; the inbox itself opens as its own window. Works with Gmail, HEY and any IMAP mail server.",
+    "description": "Unread mail count in the bar; the inbox itself opens as its own window. Works with Gmail, HEY and any JMAP or IMAP mail server.",
     "category": "Communication",
     "aliases": [
       "mail",
@@ -27,6 +28,7 @@
       "gmail",
       "hey",
       "imap",
+      "jmap",
       "inbox",
       "e-mail",
       "mailbox",
@@ -44,9 +46,19 @@
       "oauthPort": 9481,
       "undoSendSeconds": 10,
       "unifiedCalendarView": true,
-      "openOnClick": "Window"
+      "openOnClick": "Window",
+      "showBarIcon": true,
+      "previewOnCursor": false,
+      "markReadDelaySec": 2
     },
     "schema": [
+      {
+        "key": "showBarIcon",
+        "type": "boolean",
+        "label": "Show the icon in the bar",
+        "defaultValue": true,
+        "description": "Turn this off to run Omamail with no envelope in the bar. Mail is still checked and still notifies; only the icon goes. With it off the window opens from a keybinding or a terminal and nowhere else, so bind a key first: o.bind(\"SUPER + SHIFT + G\", \"Omamail\", \"omarchy shell shell toggle omamail '{}'\")"
+      },
       {
         "key": "refreshIntervalSec",
         "type": "integer",
@@ -65,6 +77,23 @@
         "max": 100,
         "step": 5,
         "defaultValue": 25
+      },
+      {
+        "key": "previewOnCursor",
+        "type": "boolean",
+        "label": "Preview as the cursor moves",
+        "defaultValue": false,
+        "description": "Show a message as soon as the cursor reaches it, instead of waiting for Enter. Off by default because stepping through a list would otherwise mark every message it passed read; with this on, a previewed message is marked read only once the cursor has stayed on it. Not applied in a narrow window, where the reader takes the list's place."
+      },
+      {
+        "key": "markReadDelaySec",
+        "type": "integer",
+        "label": "Mark a previewed message read after (seconds)",
+        "min": 0,
+        "max": 30,
+        "step": 1,
+        "defaultValue": 2,
+        "description": "How long the cursor has to stay on a message before it counts as read. 0 marks it read as soon as it is previewed. Only applies while Preview as the cursor moves is on; Enter always marks it read."
       },
       {
         "key": "heavyMessageRendering",

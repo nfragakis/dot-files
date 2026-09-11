@@ -70,6 +70,29 @@ Item {
       compare(host.lastId, "archive")
     }
 
+    function test_space_toggles_selection_in_the_list() {
+      keyClick(Qt.Key_Space)
+      compare(host.lastId, "toggleCheck")
+    }
+
+    function test_space_stays_text_in_a_draft() {
+      host.context = "compose"
+      compose.opened = true
+      composeField.text = ""
+      scope.applyContextFocus()
+      wait(20)
+      keyClick(Qt.Key_Space)
+      compare(host.lastId, "")
+      compare(composeField.text, " ")
+    }
+
+    function test_space_toggles_selection_while_reading() {
+      host.context = "reader"
+      wait(20)
+      keyClick(Qt.Key_Space)
+      compare(host.lastId, "toggleCheck")
+    }
+
     function test_the_same_letter_is_dead_on_a_form() {
       host.context = "page"
       wait(20)
@@ -91,7 +114,7 @@ Item {
       compare(host.lastId, "", "e is a letter in a query")
     }
 
-    function test_a_modified_key_still_reaches_a_draft() {
+    function test_old_help_key_is_dead_in_a_draft() {
       host.context = "compose"
       wait(20)
       keyClick(Qt.Key_K, Qt.ControlModifier)
