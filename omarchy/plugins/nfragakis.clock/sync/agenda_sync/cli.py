@@ -73,24 +73,6 @@ def sync(config_path: Path, output_path: Path) -> dict[str, Any]:
                 stale["stale"] = True
                 all_events.append(stale)
 
-    tasks: list[dict[str, Any]] = []
-    todoist_config = dict(config.get("todoist") or {})
-    window_unit = "day" if future_days == 1 else "days"
-    todoist_config["filter"] = f"overdue | {future_days} {window_unit}"
-    if todoist_config.get("enabled", False):
-        try:
-            from .providers import todoist
-
-            tasks, source = todoist.fetch(todoist_config)
-            source["status"] = "ok"
-            sources.append(source)
-        except Exception as error:
-            errors.append({"source": "todoist", "message": str(error)})
-            sources.append({"id": "todoist", "name": "Todoist", "count": 0, "status": "error"})
-            tasks = previous.get("tasks", [])
-            for task in tasks:
-                task["stale"] = True
-
     payload = {
         "version": 1,
         "syncedAt": iso_now(),
@@ -98,14 +80,13 @@ def sync(config_path: Path, output_path: Path) -> dict[str, Any]:
         "sources": sources,
         "errors": errors,
         "events": prepare_events(all_events),
-        "tasks": tasks,
     }
     atomic_write_json(output_path, payload)
     return payload
 
 
 def parser() -> argparse.ArgumentParser:
-    result = argparse.ArgumentParser(description="Sync calendars and Todoist for the Omarchy clock")
+    result = argparse.ArgumentParser(description="Sync calendars for the Omarchy clock")
     result.add_argument("--config", default=DEFAULT_CONFIG)
     result.add_argument("--output", default=DEFAULT_OUTPUT)
     result.add_argument("--summary", action="store_true", help="print counts after syncing")
@@ -124,7 +105,6 @@ def main(argv: list[str] | None = None) -> int:
             json.dumps(
                 {
                     "events": len(payload["events"]),
-                    "tasks": len(payload["tasks"]),
                     "errors": payload["errors"],
                     "output": str(expand_path(args.output)),
                 },

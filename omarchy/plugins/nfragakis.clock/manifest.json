@@ -4,7 +4,7 @@
   "name": "Calendar Dashboard",
   "version": "1.0.0",
   "author": "Omarchy",
-  "description": "The Omarchy clock with account calendars, meeting links, and Todoist at a glance.",
+  "description": "The Omarchy clock with account calendars and meeting links at a glance.",
   "kinds": [
     "bar-widget"
   ],
@@ -13,7 +13,7 @@
   },
   "barWidget": {
     "displayName": "Calendar Dashboard",
-    "description": "The Omarchy clock with account calendars, meeting links, and Todoist at a glance.",
+    "description": "The Omarchy clock with account calendars and meeting links at a glance.",
     "category": "Time",
     "allowMultiple": false
   },

@@ -1,8 +1,8 @@
 # Calendar Dashboard
 
 A personal clone of Omarchy's first-party clock. It keeps the stock bar and
-month calendar, then adds a selected-day view with calendar events, direct
-meeting links, and a compact Todoist list.
+month calendar, then adds a selected-day view with calendar events and direct
+meeting links.
 
 ## Data sources
 
@@ -12,12 +12,6 @@ service can combine:
 - Google Calendar API accounts
 - Microsoft Graph / Outlook accounts
 - Evolution Data Server as an optional local adapter
-- Todoist tasks due within the configured future window, plus overdue tasks
-
-The default Todoist query follows `window.futureDays`. A selected calendar day
-acts as a cutoff: its list includes every incomplete task due on or before that
-day and excludes anything due later. The dashboard owns this date window so a
-stale or narrower `todoist.filter` cannot make selected days incomplete.
 
 The provider layer is independent of the QML. Evolution is useful as a working
 fallback on this machine, but it is not required by the plugin.
@@ -51,15 +45,6 @@ mkdir -p ~/.config/omarchy
 scp user@old-machine:.config/omarchy/calendar-dashboard.json \
   ~/.config/omarchy/calendar-dashboard.json
 chmod 600 ~/.config/omarchy/calendar-dashboard.json
-```
-
-Todoist's API token is a credential and must remain outside this repository.
-Transfer it directly between machines, then restrict its permissions:
-
-```bash
-mkdir -p ~/.config/todoist
-scp user@old-machine:.config/todoist/api_key ~/.config/todoist/api_key
-chmod 600 ~/.config/todoist/api_key
 ```
 
 Finish by installing the timer and performing the initial sync:

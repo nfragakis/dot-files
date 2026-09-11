@@ -21,6 +21,13 @@ The installer links these paths into `~/.config/omarchy`:
 - `shell.toml`
 - every plugin directory under `omarchy/plugins/`
 
+It also installs the third-party plugins that `shell.json` places but this
+repository does not carry, cloning each with `omarchy plugin add` when it is
+absent. Currently that is the Todoist widget,
+`io.github.aryan-techie.todoist`, from
+<https://github.com/aryan-techie/omarchy-todoist>. Its API token is entered in
+the widget's own Settings view, not kept here.
+
 It is safe to run repeatedly. A conflicting file, directory, or link is moved
 to `~/.local/state/dot-files/backups/omarchy/<timestamp>` before the repo path
 is linked. Other user plugins and Omarchy configuration are left in place.

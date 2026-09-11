@@ -73,12 +73,10 @@ Panel {
   // credentials and never performs network requests.
   property var dashboardDoc: null
   property var eventIndex: ({})
-  property var dashboardTasks: []
   property bool dayViewOpen: false
   property string selectedDayKey: todayKey
   readonly property date selectedDate: Model.dateFromKey(selectedDayKey, today)
   readonly property var selectedEvents: Model.eventsForDateKey(eventIndex, selectedDayKey)
-  readonly property var selectedTasks: Model.tasksForDateKey(dashboardTasks, selectedDayKey)
   readonly property string dashboardStatus: Model.dashboardStatus(dashboardDoc, Date.now())
 
   function applyDashboard(raw) {
@@ -93,7 +91,6 @@ Panel {
     }
     root.dashboardDoc = document
     root.eventIndex = Model.indexEventsByDate(document ? document.events : [])
-    root.dashboardTasks = document && Array.isArray(document.tasks) ? document.tasks : []
   }
 
   function openDay(key) {
@@ -163,7 +160,9 @@ Panel {
   // Summoning by hotkey moves no pointer, so a hover the bar was still
   // holding must not keep the center indicators revealed behind the panel.
   function setCenterHoverRevealSuppressed(value) {
-    if (root.bar && "centerHoverRevealSuppressed" in root.bar)
+    if (root.bar && typeof root.bar.setCenterHoverRevealSuppressed === "function")
+      root.bar.setCenterHoverRevealSuppressed(value)
+    else if (root.bar && "centerHoverRevealSuppressed" in root.bar)
       root.bar.centerHoverRevealSuppressed = value
   }
 
@@ -855,8 +854,6 @@ Panel {
             anchors.horizontalCenter: parent.horizontalCenter
             selectedDate: root.selectedDate
             events: root.selectedEvents
-            tasks: root.selectedTasks
-            selectedDayIsToday: root.selectedDayKey === root.todayKey
             foreground: root.contentForeground
             fontFamily: root.contentFontFamily
             statusText: root.dashboardStatus

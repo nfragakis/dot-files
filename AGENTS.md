@@ -8,7 +8,10 @@ setting it up on a machine, and before assuming a file here is the one in use.
 `omarchy/` and the keyboard input configuration have installers.
 `./install-omarchy.sh` symlinks the plugin directories, `shell.json` and
 `shell.toml` into `~/.config/omarchy`, backing up whatever it replaces under
-`~/.local/state/dot-files/backups/omarchy/`. `./install-input.sh` installs the
+`~/.local/state/dot-files/backups/omarchy/`. It also clones the third-party
+Todoist widget (`io.github.aryan-techie.todoist`) with `omarchy plugin add`
+when it is missing; that plugin is git-managed by Omarchy, not vendored here,
+and `shell.json` already places it in the bar. `./install-input.sh` installs the
 repo's Hyprland input file and system-wide `keyd` configuration.
 
 **Everything else was copied by hand and is not linked.** Except for
@@ -64,6 +67,10 @@ configured and one that works.
 - **Calendar dashboard config.** `~/.config/omarchy/calendar-dashboard.json`
   does not exist until it is created. `omarchy/plugins/nfragakis.clock/sync/`
   has the setup script and `AUTH.md`.
+- **Todoist token.** The Todoist widget keeps its API token in
+  `~/.local/state/omarchy/io.github.aryan-techie.todoist/settings.json`,
+  written from the widget's Settings view (click the bar icon, then the gear).
+  Paste the token there once per machine; nothing in this repository holds it.
 - **Whisper dictation.** The shell UI and transcription code are the
   `nfragakis.whisper` plugin. A `whisper.cpp` checkout, a local build, and model
   weights still stay outside git in machine-specific local state. See

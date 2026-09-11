@@ -9,10 +9,5 @@
       "type": "evolution",
       "selectedOnly": true
     }
-  ],
-  "todoist": {
-    "enabled": true,
-    "tokenFile": "~/.config/todoist/api_key",
-    "limit": 50
-  }
+  ]
 }

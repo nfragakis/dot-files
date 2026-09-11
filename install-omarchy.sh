@@ -51,6 +51,31 @@ for plugin_path in "$source_root"/plugins/*; do
   link_path "$plugin_path" "$target_root/plugins/$plugin"
 done
 
+# Third-party plugins that shell.json places but this repository does not
+# carry. `omarchy plugin add` clones each one into the plugin directory as a
+# git-managed plugin (update with `omarchy plugin update <id>`). The bar
+# placement already lives in the repo's shell.json, so --enable is deliberately
+# not passed: enabling rewrites shell.json by rename, which would detach the
+# link made below.
+git_plugins=(
+  "io.github.aryan-techie.todoist https://github.com/aryan-techie/omarchy-todoist.git"
+)
+
+for entry in "${git_plugins[@]}"; do
+  plugin="${entry%% *}"
+  url="${entry#* }"
+  if [[ -e "$target_root/plugins/$plugin" ]]; then
+    printf 'Already installed %s\n' "$target_root/plugins/$plugin"
+  elif command -v omarchy-plugin-add >/dev/null 2>&1; then
+    # Non-fatal: a clone that fails (no network, shell not running) must not
+    # stop the config links below.
+    omarchy-plugin-add "$url" --yes \
+      || printf 'Could not add %s; run later: omarchy plugin add %s --yes\n' "$plugin" "$url" >&2
+  else
+    printf 'Skipping %s: omarchy-plugin-add is not on PATH\n' "$plugin" >&2
+  fi
+done
+
 link_path "$source_root/shell.json" "$target_root/shell.json"
 link_path "$source_root/shell.toml" "$target_root/shell.toml"
 

@@ -1,5 +1,5 @@
 [Unit]
-Description=Sync calendars and Todoist for the Omarchy calendar dashboard
+Description=Sync calendars for the Omarchy calendar dashboard
 After=graphical-session.target network-online.target
 Wants=network-online.target
 
