@@ -32,6 +32,24 @@ It is safe to run repeatedly. A conflicting file, directory, or link is moved
 to `~/.local/state/dot-files/backups/omarchy/<timestamp>` before the repo path
 is linked. Other user plugins and Omarchy configuration are left in place.
 
+### Coding-agent workspace marks
+
+The workspace widget can show a green dot when a Codex or Claude Code turn is
+complete and an amber dot when an agent needs approval or other input. The
+existing red Hyprland urgency dot remains unchanged. Install the machine-local
+agent hooks after installing the Omarchy plugin:
+
+```bash
+./install-agent-attention.py
+```
+
+The installer adds hook entries alongside (and does not replace) existing
+Codex and Claude Code hooks. It backs up both settings files under
+`~/.local/state/dot-files/backups/agent-attention/`. Codex requires one final
+interactive step: open `/hooks` and trust the newly added hooks. Visiting or
+clicking a workspace clears its agent mark; submitting the next prompt clears
+the corresponding session as well.
+
 ## Keyboard
 
 Install the repo-managed Hyprland input settings and the system-wide `keyd`

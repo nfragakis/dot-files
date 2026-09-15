@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.Hyprland
+import Quickshell.Io
 import qs.Commons
 import qs.Ui
 
@@ -70,7 +71,56 @@ BarWidget {
     root.bar.run("hyprctl dispatch " + Util.shellQuote("hl.dsp.focus({ workspace = \"" + id + "\" })"))
   }
 
+  function agentState(id) {
+    var revision = root.agentStateRevision
+    var sessions = root.agentSessions || {}
+    var state = ""
+
+    for (var sessionId in sessions) {
+      var session = sessions[sessionId]
+      if (!session || Number(session.workspace) !== id) continue
+      if (session.state === "attention") return "attention"
+      if (session.state === "complete") state = "complete"
+    }
+
+    return state
+  }
+
+  function agentSummary(id) {
+    var revision = root.agentStateRevision
+    var sessions = root.agentSessions || {}
+    var providers = []
+    var seen = {}
+    var state = root.agentState(id)
+
+    for (var sessionId in sessions) {
+      var session = sessions[sessionId]
+      if (!session || Number(session.workspace) !== id || session.state !== state || !session.provider) continue
+      var provider = String(session.provider)
+      if (!seen[provider]) {
+        seen[provider] = true
+        providers.push(provider.charAt(0).toUpperCase() + provider.slice(1))
+      }
+    }
+
+    if (state === "attention") return providers.join(" / ") + " needs you"
+    if (state === "complete") return providers.join(" / ") + " turn complete"
+    return ""
+  }
+
+  function clearAgentState(id) {
+    if (clearAgentStateProcess.running) return
+    clearAgentStateProcess.command = ["python3", root.agentStatusCommand, "clear", String(id)]
+    clearAgentStateProcess.running = true
+  }
+
   readonly property int defaultWorkspaceCount: 5
+  readonly property string home: Quickshell.env("HOME") || ""
+  readonly property string stateHome: Quickshell.env("XDG_STATE_HOME") || home + "/.local/state"
+  readonly property string agentStatePath: stateHome + "/omarchy/agent-attention.json"
+  readonly property string agentStatusCommand: (Quickshell.env("XDG_CONFIG_HOME") || home + "/.config") + "/omarchy/plugins/nfragakis.workspaces/agent-status.py"
+  property var agentSessions: ({})
+  property int agentStateRevision: 0
   readonly property real trailingGap: root.vertical ? 0 : Style.spaceReal(1.5)
   readonly property var hostWindow: root.QsWindow.window
   readonly property real screenWidth: hostWindow && hostWindow.screen ? hostWindow.screen.width : 0
@@ -87,6 +137,34 @@ BarWidget {
 
   implicitWidth: grid.implicitWidth + trailingGap
   implicitHeight: grid.implicitHeight
+
+  FileView {
+    id: agentStateFile
+    path: root.agentStatePath
+    watchChanges: true
+    printErrors: false
+    onFileChanged: reload()
+    onLoaded: {
+      try {
+        var parsed = JSON.parse(String(text() || ""))
+        root.agentSessions = parsed && parsed.sessions ? parsed.sessions : {}
+      } catch (error) {
+        root.agentSessions = {}
+        console.warn("workspaces", "Ignoring invalid agent attention state", error)
+      }
+      root.agentStateRevision++
+    }
+    onLoadFailed: {
+      root.agentSessions = {}
+      root.agentStateRevision++
+    }
+  }
+
+  Process {
+    id: clearAgentStateProcess
+    running: false
+    onExited: agentStateFile.reload()
+  }
 
   GridLayout {
     id: grid
@@ -111,6 +189,8 @@ BarWidget {
         readonly property bool urgent: workspace !== null && workspace.urgent
         readonly property string numberText: root.displayNumber(modelData)
         readonly property string sessionName: root.tmuxSession(workspace)
+        readonly property string agentState: root.agentState(modelData)
+        readonly property string agentSummary: root.agentSummary(modelData)
 
         bar: root.bar
         text: ""
@@ -123,9 +203,10 @@ BarWidget {
           ? root.barSize
           : (sessionName !== "" ? root.workspaceSlotWidth : root.compactWorkspaceSlotWidth)
         fixedHeight: root.barSize
-        tooltipText: sessionName !== ""
+        tooltipText: (sessionName !== ""
           ? "Workspace " + numberText + " — tmux: " + sessionName
-          : (occupied ? "Workspace " + numberText + " — " + windowCount + " window" + (windowCount === 1 ? "" : "s") : "Workspace " + numberText + " — empty")
+          : (occupied ? "Workspace " + numberText + " — " + windowCount + " window" + (windowCount === 1 ? "" : "s") : "Workspace " + numberText + " — empty"))
+          + (agentSummary !== "" ? "\n" + agentSummary : "")
 
         Rectangle {
           id: workspaceSurface
@@ -222,19 +303,35 @@ BarWidget {
           color: Color.accent
         }
 
-        Rectangle {
-          visible: workspaceButton.urgent
+        Row {
           anchors.top: parent.top
           anchors.right: parent.right
           anchors.topMargin: Style.space(5)
           anchors.rightMargin: Style.space(5)
-          width: Style.space(4)
-          height: width
-          radius: width / 2
-          color: Color.urgent
+          spacing: Style.space(2)
+
+          Rectangle {
+            visible: workspaceButton.agentState !== ""
+            width: Style.space(4)
+            height: width
+            radius: width / 2
+            color: workspaceButton.agentState === "attention" ? "#f59e0b" : "#22c55e"
+          }
+
+          Rectangle {
+            visible: workspaceButton.urgent
+            width: Style.space(4)
+            height: width
+            radius: width / 2
+            color: Color.urgent
+          }
         }
 
-        onPressed: function() { root.focusWorkspace(modelData) }
+        onFocusedChanged: if (focused) root.clearAgentState(modelData)
+        onPressed: function() {
+          root.clearAgentState(modelData)
+          root.focusWorkspace(modelData)
+        }
       }
     }
   }
