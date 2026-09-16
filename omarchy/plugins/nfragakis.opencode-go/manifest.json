@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "nfragakis.opencode-go",
+  "name": "OpenCode Go Usage",
+  "version": "1.0.0",
+  "author": "Nick Fragakis",
+  "description": "Keeps the OpenCode Go usage record the agents panel displays fresh",
+  "kinds": [
+    "service"
+  ],
+  "entryPoints": {
+    "service": "Service.qml"
+  }
+}

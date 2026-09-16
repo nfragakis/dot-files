@@ -79,6 +79,9 @@
   "plugins": [
     {
       "id": "nfragakis.whisper"
+    },
+    {
+      "id": "nfragakis.opencode-go"
     }
   ],
   "version": 1
