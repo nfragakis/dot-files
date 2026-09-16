@@ -32,6 +32,9 @@ rebind(
 rebind("SUPER + S", "Audio controls", "omarchy-shell shell toggle omarchy.audio")
 rebind("SUPER + SHIFT + S", "Sleep screen", [[sleep 0.6; hyprctl dispatch dpms off]])
 rebind("SUPER + SHIFT + P", "Screenshot", "omarchy-capture-screenshot")
+-- Omarchy's default for this is SUPER + CTRL + PRINT, which is not reachable
+-- with one hand. The default binding is left in place.
+rebind("SUPER + SHIFT + O", "Extract text (OCR) from screenshot", "omarchy-capture-text")
 rebind(
   "SUPER + SHIFT + V",
   "Screenrecording",
