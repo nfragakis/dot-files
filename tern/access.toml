@@ -1,0 +1,5 @@
+tailscale = true
+[[allow]]
+method = "tailscale"
+identity = "nafragakis@gmail.com"
+users = ["nfragakis"]

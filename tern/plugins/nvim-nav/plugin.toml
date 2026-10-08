@@ -1,0 +1,6 @@
+schema = 1
+id = "nvim-nav"
+name = "Neovim navigation"
+version = "0.1.0"
+description = "Ctrl+h/j/k/l across Neovim splits and native local or remote Tern panes."
+window = "window.luau"

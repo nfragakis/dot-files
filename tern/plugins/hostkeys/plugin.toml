@@ -1,0 +1,6 @@
+schema = 1
+id = "hostkeys"
+name = "Host keys"
+version = "0.1.0"
+description = "Toggle between this machine and fw-dev; open the herdr dashboard on fw-dev."
+window = "window.luau"

@@ -14,10 +14,13 @@ when it is missing; that plugin is git-managed by Omarchy, not vendored here,
 and `shell.json` already places it in the bar. `./install-input.sh` installs the
 repo's Hyprland input file and system-wide `keyd` configuration.
 
-**Everything else was copied by hand and is not linked.** Except for
-`hypr/input.lua`, the files under `ghostty/`, `hypr/`, `nvim/`, `opencode/`,
-`wiremix/`, `zed/`, `tmux.conf` and `pipewire/` merely resemble what is in
-`~/.config`. Nothing keeps them in step.
+**Most other app configurations were copied by hand and are not linked.**
+Except for `hypr/input.lua` and linked Tern plugins, the files under
+`ghostty/`, `hypr/`, `nvim/`, `opencode/`, `wiremix/`, `zed/`, `tmux.conf`,
+`pipewire/`, and the Tern settings snapshots merely resemble what is installed.
+Nothing keeps those copied files in step. Tern links `nvim-nav` on the laptop
+and `fwdesktop`; the desktop also links `hostkeys`, while the laptop retains
+its copied hostkeys installation. See README.md for paths and Neovim setup.
 
 Two consequences, both of which have already happened:
 
