@@ -11,8 +11,11 @@ function parseToken(raw) {
     return { ok: false, error: "Evolution returned no Google session" }
 
   var token = String(value.accessToken || "").trim()
-  if (token === "")
-    return { ok: false, error: "Evolution returned no Google access token" }
+  if (token === "") {
+    var failure = { ok: false, error: "Evolution returned no Google access token" }
+    if (value.retryable === true) failure.retryable = true
+    return failure
+  }
 
   var expiresIn = Math.floor(Number(value.expiresIn))
   if (!isFinite(expiresIn) || expiresIn < 60) expiresIn = 3600

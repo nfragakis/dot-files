@@ -15,6 +15,12 @@ deepEqual(evolution.parseToken('{"expiresIn":120}'), {
   ok: false,
   error: "Evolution returned no Google access token"
 })
+deepEqual(evolution.parseToken('{"retryable":true}'), {
+  ok: false,
+  error: "Evolution returned no Google access token",
+  retryable: true
+})
+assert.strictEqual(evolution.parseToken('{"retryable":"true"}').retryable, undefined)
 deepEqual(evolution.parseToken('{"accessToken":"token","expiresIn":120,"scope":"mail"}'), {
   ok: true,
   error: "",

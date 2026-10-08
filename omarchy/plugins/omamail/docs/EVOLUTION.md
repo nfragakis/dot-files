@@ -161,12 +161,18 @@ keyring`. Omamail still has its rows in `~/.config/omamail/accounts.json`, but
 each Gmail row falls back to its sign-in state because the Evolution broker
 cannot retrieve a token.
 
-Do not enable SDDM autologin on a machine using Evolution-brokered Omamail
-accounts. A normal password login lets the existing `pam_gnome_keyring.so`
-entries in `/etc/pam.d/sddm` unlock the keyring at session start. If the setup
-screen appears after a restart, confirm the account file still contains its
-rows and check the boot journal for the messages above before reauthorizing or
-editing account configuration.
+With SDDM autologin, the keyring still needs a password unlock during the
+session. Omamail now retries a configured Evolution account whose token is
+unavailable, starting after five seconds and backing off to five minutes.
+Once the keyring unlocks, the next attempt restores mail without reloading the
+plugin or creating a Google Cloud client. Signing out cancels this recovery.
+An address with no matching Evolution source does not retry.
+
+If the setup screen appears after a restart, confirm the account file still
+contains its rows and check the boot journal for the messages above before
+reauthorizing or editing account configuration. A normal password login can
+unlock the keyring at session start when the PAM auth stack includes
+`pam_gnome_keyring.so`.
 
 ## Verifying
 

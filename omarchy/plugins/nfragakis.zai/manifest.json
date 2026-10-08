@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "nfragakis.zai",
+  "name": "Z.AI Coding Plan Usage",
+  "version": "1.0.0",
+  "author": "Nick Fragakis",
+  "description": "Keeps the Z.AI Coding Plan usage record the agents panel displays fresh",
+  "kinds": [
+    "service"
+  ],
+  "entryPoints": {
+    "service": "Service.qml"
+  }
+}

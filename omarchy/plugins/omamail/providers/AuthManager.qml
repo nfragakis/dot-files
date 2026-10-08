@@ -54,6 +54,7 @@ Item {
   readonly property bool credentialsPresent: Credentials.isConfigured(credentials)
   property bool systemBrokerAvailable: false
   property bool systemBrokerSuppressed: false
+  property bool systemBrokerRetryNeeded: false
   readonly property string clientId: credentials ? String(credentials.clientId || "") : ""
   readonly property string clientDescription: Credentials.describe(credentials)
 
@@ -193,9 +194,14 @@ Item {
     var result = Evolution.parseToken(raw)
     if (!result.ok) {
       systemBrokerAvailable = false
+      systemBrokerRetryNeeded = result.retryable === true
       startStoredSession(purpose)
+      if (systemBrokerRetryNeeded) scheduleRefreshRetry()
       return
     }
+    systemBrokerRetryNeeded = false
+    refreshRetryAttempt = 0
+    refreshRetry.stop()
     systemBrokerAvailable = true
     savedSessionPresent = true
     accessToken = result.accessToken
@@ -552,7 +558,7 @@ Item {
   }
 
   function scheduleRefreshRetry() {
-    if (!savedSessionPresent || refreshRetry.running) return
+    if ((!savedSessionPresent && !systemBrokerRetryNeeded) || refreshRetry.running) return
     refreshRetry.interval = OAuth.refreshRetryDelay(refreshRetryAttempt)
     refreshRetryAttempt++
     refreshRetry.start()
@@ -693,7 +699,8 @@ Item {
 
   function logout() {
     cancelLogin()
-    systemBrokerSuppressed = systemBrokerAvailable
+    systemBrokerSuppressed = systemBrokerAvailable || systemBrokerRetryNeeded
+    systemBrokerRetryNeeded = false
     refreshRetry.stop()
     refreshRetryAttempt = 0
     savedSessionPresent = false

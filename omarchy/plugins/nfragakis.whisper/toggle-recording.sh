@@ -80,7 +80,8 @@ stop_recording() {
     return 1
   fi
 
-  /usr/bin/python3 "$script_dir/transcribe.py"
+  # Keep Whisper and wl-copy's temporary files out of /tmp's per-user quota.
+  TMPDIR="${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}" /usr/bin/python3 "$script_dir/transcribe.py"
 }
 
 action="${1:-toggle}"

@@ -29,7 +29,8 @@
           "id": "omarchy.menu"
         },
         {
-          "id": "nfragakis.workspaces"
+          "id": "tornikegomareli.spaces",
+          "showApps": "all"
         }
       ],
       "right": [
@@ -50,7 +51,7 @@
           "id": "omarchy.tailscale"
         },
         {
-          "id": "omarchy.agents"
+          "id": "nfragakis.agents"
         },
         {
           "id": "omarchy.bluetooth"
@@ -70,7 +71,7 @@
       ]
     },
     "position": "top",
-    "transparent": true
+    "transparent": false
   },
   "idle": {
     "lock": 300,
@@ -82,6 +83,12 @@
     },
     {
       "id": "nfragakis.opencode-go"
+    },
+    {
+      "id": "nfragakis.zai"
+    },
+    {
+      "id": "nfragakis.grok"
     }
   ],
   "version": 1

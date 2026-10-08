@@ -242,12 +242,19 @@ def copy_to_clipboard(text):
 
 
 def paste_at_cursor():
+    # wtype creates its keymap in /tmp, which may be over its per-user quota.
+    shortcut = """\
+hl.dispatch(hl.dsp.send_key_state({ mods = "SHIFT", key = "Insert", state = "down" }))
+hl.timer(function()
+  hl.dispatch(hl.dsp.send_key_state({ mods = "SHIFT", key = "Insert", state = "up" }))
+end, { timeout = 50, type = "oneshot" })"""
     try:
         time.sleep(0.05)
         subprocess.run(
-            ["wtype", "-M", "shift", "-k", "Insert", "-m", "shift"],
+            ["hyprctl", "eval", shortcut],
             check=True,
             timeout=2,
+            stdout=subprocess.DEVNULL,
         )
         return True
     except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
@@ -272,7 +279,9 @@ def main():
     if not copy_to_clipboard(text):
         return 1
 
-    paste_at_cursor()
+    if not paste_at_cursor():
+        notify("Paste failed", "Transcript copied; press Super+V to paste")
+        return 1
     print(text)
     return 0
 

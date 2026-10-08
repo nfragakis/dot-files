@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "nfragakis.grok",
+  "name": "SuperGrok Usage",
+  "version": "1.0.0",
+  "author": "Nick Fragakis",
+  "description": "Keeps the SuperGrok usage record the agents panel displays fresh",
+  "kinds": [
+    "service"
+  ],
+  "entryPoints": {
+    "service": "Service.qml"
+  }
+}

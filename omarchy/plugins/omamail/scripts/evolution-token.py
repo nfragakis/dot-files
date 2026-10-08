@@ -26,9 +26,9 @@ def main():
         fail("usage: evolution-token.py account@example.com", 2)
 
     account = sys.argv[1].strip().lower()
+    candidates = []
     try:
         registry = EDataServer.SourceRegistry.new_sync(None)
-        candidates = []
         for source in registry.list_sources(None):
             if not source.get_enabled():
                 continue
@@ -51,9 +51,14 @@ def main():
         )
         success, access_token, expires_in = candidates[0].get_oauth2_access_token_sync(None)
     except Exception as error:
+        # A configured account can become usable after the login keyring is
+        # unlocked. Let the caller retry without treating it as a new sign-in.
+        if candidates:
+            print(json.dumps({"retryable": True}, separators=(",", ":")))
         fail("Evolution could not provide a Google session: " + str(error), 4)
 
     if not success or not access_token:
+        print(json.dumps({"retryable": True}, separators=(",", ":")))
         fail("Evolution returned no Google access token", 4)
 
     print(
