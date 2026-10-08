@@ -88,6 +88,14 @@ The trial did not start another app server or Supabase instance.
 | Previous / next tab | Alt+Left / Alt+Right |
 | Open the existing remote herdr dashboard | Ctrl+S, A |
 | Previous / next named session, across hosts | Ctrl+S, Ctrl+K / Ctrl+J |
+| Copy / paste through Omarchy's universal shortcuts | Super+C / Super+V, with Tern tagged as a terminal |
+
+Omarchy's packaged terminal-class matcher does not include `so.stencil.tern`.
+The user-only rule in `hypr/hyprland.lua` adds `terminal`, so the existing
+universal clipboard bindings send Ctrl+Insert / Shift+Insert instead of
+Ctrl+C / Ctrl+V. Install that rule in the live user config too; this file is
+not symlinked. Do not edit packaged Omarchy defaults or bind away terminal
+Ctrl+C. Direct Tern alternatives are Ctrl+Shift+C / Ctrl+Shift+V.
 
 Ctrl navigation does not wrap at tiled-layout boundaries. In Neovim it
 works in normal, insert, and terminal modes. Floating/PiP panes retain the
@@ -138,14 +146,24 @@ user mode still uses its built-in SSH-key policy. No SSH keys or tailnet ACLs
 were changed. A fresh desktop client with no SSH agent authenticated with
 method `tailscale`; the laptop reconnected with the same identity.
 
-**Native shared-session discovery is not accepted yet.** In 0.6.3, a fresh
-window can lack sessions another window shows. Merging the existing saved
-catalogs did not make future windows share them. No supported window-key
-rebinding control was found in the installed settings or public plugin APIs.
-`--window` selects a CLI command's window; it is not a proven GUI sharing
-fix. `share_sessions` controls permission to serve this user's sessions,
-not which remote catalog a client sees. Keep tmux/herdr as the reliable
-cross-machine workflow until native new-window discovery is fixed.
+**Cross-machine persistence works; arbitrary-window discovery is not accepted.**
+A disposable native remote session created by a headless laptop client was
+visible to a fresh headless desktop client, with the same session and pane
+IDs. It remained accessible on the desktop after laptop disconnection, and
+the laptop reattached to those same IDs. The probe was then removed.
+`tern-remote.service` is enabled and the dev user's linger is enabled.
+This proves two clients can share a remote session, not that every GUI window
+automatically joins the same catalog.
+
+In 0.6.3, a fresh GUI window can lack sessions another window shows. Merging
+saved catalogs did not fix this. No supported window-key rebinding control
+was found in the installed settings or public plugin APIs. `--window`
+selects a CLI command's window; it is not a proven GUI sharing fix.
+`share_sessions` controls permission to serve sessions, not the catalog
+selected by a remote client. Use named sessions/tabs within one established
+workspace rather than additional windows, and explicitly disconnect the
+remote host before closing its window. That avoids the demonstrated risky
+path but is not a guarantee for unverified GUI attachments.
 
 The pre-merge layouts and original listener unit are backed up on `fw-dev`
 under `~/.local/state/tern-trial/backups/20261008-namespace-merge/`.

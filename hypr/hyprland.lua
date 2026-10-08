@@ -27,3 +27,6 @@ require("default.hypr.toggles")
 
 -- Add any other personal Hyprland configuration below.
 -- o.window("qemu", { workspace = "5" })
+
+-- Route Omarchy's universal copy/paste through terminal shortcuts in Tern.
+o.window("so\\.stencil\\.tern", { tag = "+terminal" })
