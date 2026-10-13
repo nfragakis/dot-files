@@ -6,11 +6,26 @@ local function rebind(keys, description, command, options)
   o.bind(keys, description, command, options)
 end
 
--- Vim-style workspace window focus with Alt.
-rebind("ALT + H", "Focus on left window", hl.dsp.focus({ direction = "l" }))
-rebind("ALT + J", "Focus on below window", hl.dsp.focus({ direction = "d" }))
-rebind("ALT + K", "Focus on above window", hl.dsp.focus({ direction = "u" }))
-rebind("ALT + L", "Focus on right window", hl.dsp.focus({ direction = "r" }))
+-- Leave native Alt navigation untouched in Tern; bind it only elsewhere.
+local function update_window_navigation()
+  local window = hl.get_active_window()
+  local tern_focused = window and window.class == "so.stencil.tern"
+  for _, binding in ipairs({
+    { "H", "left", "l" },
+    { "J", "down", "d" },
+    { "K", "up", "u" },
+    { "L", "right", "r" },
+  }) do
+    local keys = "ALT + " .. binding[1]
+    hl.unbind(keys)
+    if not tern_focused then
+      o.bind(keys, "Focus " .. binding[2] .. " window", hl.dsp.focus({ direction = binding[3] }))
+    end
+  end
+end
+
+hl.on("window.active", update_window_navigation)
+update_window_navigation()
 
 rebind("SUPER + ALT + RETURN", "Tmux", { omarchy = "terminal-tmux" })
 rebind("SUPER + RETURN", "Terminal", { omarchy = "terminal" })
