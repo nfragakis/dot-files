@@ -6,6 +6,12 @@ local function rebind(keys, description, command, options)
   o.bind(keys, description, command, options)
 end
 
+-- Vim-style workspace window focus with Alt.
+rebind("ALT + H", "Focus on left window", hl.dsp.focus({ direction = "l" }))
+rebind("ALT + J", "Focus on below window", hl.dsp.focus({ direction = "d" }))
+rebind("ALT + K", "Focus on above window", hl.dsp.focus({ direction = "u" }))
+rebind("ALT + L", "Focus on right window", hl.dsp.focus({ direction = "r" }))
+
 rebind("SUPER + ALT + RETURN", "Tmux", { omarchy = "terminal-tmux" })
 rebind("SUPER + RETURN", "Terminal", { omarchy = "terminal" })
 rebind("SUPER + SHIFT + RETURN", "Browser", { omarchy = "browser" })
