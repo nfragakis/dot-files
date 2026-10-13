@@ -17,7 +17,7 @@
     "alt+k": "focus_pane:up",
     "alt+l": "focus_pane:right",
     "ctrl+h": "plugin.nvim-nav.navigate_h",
-    "ctrl+j": "plugin.nvim-nav.navigate_j",
+    "ctrl+j": "text:\\x0a",
     "ctrl+k": "plugin.nvim-nav.navigate_k",
     "ctrl+l": "plugin.nvim-nav.navigate_l",
     "ctrl+alt+shift+left": "resize_split:left",

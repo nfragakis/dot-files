@@ -55,6 +55,15 @@ reads the calendars EDS already has and needs nothing here.
 | `zed` | `zed/` |
 | `wiremix` | `wiremix/` |
 
+Tern is installed separately with its `so.stencil.tern.desktop` launcher.
+The root `xdg-terminals.list` makes it the default; Ghostty remains the fallback.
+
+## File manager
+
+| Package | Why |
+| --- | --- |
+| `flea` | Super+Shift+F opens Flea; Super+Alt+Shift+F opens it in the active terminal's working directory. |
+
 ## Keyboard
 
 | Package | Why |
@@ -78,7 +87,7 @@ the setup steps. The runtime path uses only Python's standard library.
 
 ```bash
 for p in evolution evolution-data-server python-gobject libsecret socat \
-         openssl curl xdg-utils uv ghostty neovim tmux mise zed wiremix keyd \
+         openssl curl xdg-utils uv ghostty neovim tmux mise zed wiremix flea keyd \
          pipewire-audio python wl-clipboard wtype; do
   pacman -Qq "$p" >/dev/null 2>&1 || echo "missing: $p"
 done

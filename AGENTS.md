@@ -14,13 +14,20 @@ when it is missing; that plugin is git-managed by Omarchy, not vendored here,
 and `shell.json` already places it in the bar. `./install-input.sh` installs the
 repo's Hyprland input file and system-wide `keyd` configuration.
 
+Tern clipboard fixes also have an installer: `./install-tern-clipboard.py`
+links `hypr/tern-clipboard.lua` and `omp/extensions/tern-enhanced-paste.ts`,
+and adds the module to the existing Hyprland bindings. `--client` installs only
+the desktop rule; `--host` installs only the omp extension. It backs up conflicts,
+preserves unrelated configuration, and is safe to repeat. See README.md.
+
 **Most other app configurations were copied by hand and are not linked.**
-Except for `hypr/input.lua` and linked Tern plugins, the files under
-`ghostty/`, `hypr/`, `nvim/`, `opencode/`, `wiremix/`, `zed/`, `tmux.conf`,
-`pipewire/`, and the Tern settings snapshots merely resemble what is installed.
-Nothing keeps those copied files in step. Tern links `nvim-nav` on the laptop
-and `fwdesktop`; the desktop also links `hostkeys`, while the laptop retains
-its copied hostkeys installation. See README.md for paths and Neovim setup.
+Except for `hypr/input.lua`, `hypr/tern-clipboard.lua`, the omp clipboard
+extension, and linked Tern plugins, the files under `ghostty/`, `hypr/`,
+`nvim/`, `opencode/`, `wiremix/`, `zed/`, `tmux.conf`, `pipewire/`, and the
+Tern settings snapshots merely resemble what is installed. Nothing keeps
+those copied files in step. Tern links `nvim-nav` on the laptop and `fwdesktop`;
+the desktop also links `hostkeys`, while the laptop retains its copied
+hostkeys installation. See README.md for paths and Neovim setup.
 
 Two consequences, both of which have already happened:
 
@@ -41,7 +48,7 @@ in caches, backups and `node_modules`. Copy the specific files that matter.
 
 ## Setting up a new machine
 
-Roughly in order. Nothing here is automated beyond steps 2 and 3,
+Roughly in order. Steps 2–4 have installers; the remaining setup is manual,
 deliberately.
 
 1. **Packages.** `PACKAGES.md` lists what has to exist and why, with a check
@@ -50,9 +57,14 @@ deliberately.
 2. **Omarchy config.** `./install-omarchy.sh`. Safe to re-run.
 3. **Keyboard input.** `./install-input.sh` installs `keyd`, its repo-managed
    Caps Lock mapping, and `hypr/input.lua`. Safe to re-run.
-4. **Everything else.** Copy the directories in by hand, or link them — see
+4. **Tern clipboard.** `./install-tern-clipboard.py` on each machine, or
+   `--client` on the Omarchy desktop and `--host` on the machine running omp.
+   Keep the checkout in place because the installed files are symlinks.
+5. **Everything else.** Copy the directories in by hand, or link them — see
    the warning above about which you have chosen.
-5. **The steps no script can do.** Below.
+   The root `xdg-terminals.list` selects Tern for Omarchy's Super+Enter;
+   follow `tern/README.md` to install that preference.
+6. **The steps no script can do.** Below.
 
 ## Steps that need a person
 

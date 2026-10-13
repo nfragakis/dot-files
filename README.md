@@ -61,12 +61,64 @@ configuration with:
 
 This maps Caps Lock to Escape when tapped and Super/Meta when held. The
 installer backs up the live Hyprland input file before replacing it.
+The scrolling snapshot keeps general mouse scrolling at 1x and touchpad
+scrolling at 0.5x, with 3x terminal-specific overrides.
+
+## Default terminal
+
+The root `xdg-terminals.list` selects Tern for Omarchy's existing Super+Enter
+binding, with Ghostty as fallback. Install it as described in
+[`tern/README.md`](tern/README.md); `install-omarchy.sh` does not install it.
+
+## Tern clipboard (text and screenshots)
+
+Install both parts on a machine that runs Omarchy and omp:
+
+```bash
+./install-tern-clipboard.py
+```
+
+For separate client and remote-host machines:
+
+```bash
+./install-tern-clipboard.py --client  # Omarchy desktop running Tern
+./install-tern-clipboard.py --host    # Machine running omp inside Tern
+```
+
+The client installer links `hypr/tern-clipboard.lua` into `~/.config/hypr`
+and adds `require("hypr.tern-clipboard")` to the existing `bindings.lua`.
+It tags Tern as a terminal so Omarchy's universal Super+V invokes Tern's
+local Shift+Insert paste action, including when its pane is remote.
+It migrates the original inline Tern rule without replacing other bindings.
+
+The host installer links `omp/extensions/tern-enhanced-paste.ts` into
+`~/.omp/agent/extensions`. This enables OSC 5522 enhanced paste when the
+session starts, working around omp 18.8.6's already-started composer missing
+the paste-mode startup hook. omp's built-in handler negotiates the clipboard
+MIME type and attaches images; no clipboard daemon or SSH forwarding is needed.
+Other extensions are left alone. For a custom agent directory, set
+`PI_CODING_AGENT_DIR` when installing.
+
+Installation is safe to repeat. Conflicts and modified bindings are backed up
+under `~/.local/state/dot-files/backups/tern-clipboard/<timestamp>-<pid>/`.
+`XDG_CONFIG_HOME` and `XDG_STATE_HOME` are respected. An active Hyprland session
+is reloaded and checked for configuration errors; otherwise the rule loads on
+next login. Existing omp sessions need `/reload`; new sessions load the
+extension automatically.
+
+Keep the checkout in place: these are symlinks, not independent copies.
+After syncing this repository to another machine, run the appropriate installer
+there. Updating the checkout does not install the fixes on a new machine by itself.
+Do not copy machine-specific `hypr/monitors.lua` as part of this setup.
 
 ## Tern remote trial
 
 `tern/settings.json` preserves the existing tmux-style preset, Ctrl+S prefix,
 Alt pane navigation, host switching, and herdr dashboard shortcuts. The trial
-adds Ctrl+h/j/k/l through `tern/plugins/nvim-nav`. `tern/plugins/hostkeys`
+adds Ctrl+h/k/l through `tern/plugins/nvim-nav`; Ctrl+J sends a literal LF
+(`text:\x0a`) to the running program so agent prompts can insert a newline.
+Neovim's existing Ctrl+J mapping still handles downward navigation and sends
+edge requests through the title bridge. `tern/plugins/hostkeys`
 preserves the existing custom commands. On the laptop, `nvim-nav` is linked
 to this repo and `hostkeys` remains a copied installation. On `fwdesktop`,
 both plugins are linked to `~/dot-files`. Settings and Neovim files remain
@@ -84,6 +136,7 @@ The trial did not start another app server or Supabase instance.
 | Toggle local / fw-dev | Ctrl+S, Tab |
 | Choose commercialize-app | Ctrl+S, S; select the session |
 | Navigate Neovim splits, then adjacent Tern panes at the edge | Ctrl+h/j/k/l |
+| Send a newline to the running program (Neovim retains its navigation mapping) | Ctrl+J |
 | Always navigate outer Tern panes using the existing behavior | Alt+h/j/k/l |
 | Previous / next tab | Alt+Left / Alt+Right |
 | Open the existing remote herdr dashboard | Ctrl+S, A |
@@ -91,11 +144,10 @@ The trial did not start another app server or Supabase instance.
 | Copy / paste through Omarchy's universal shortcuts | Super+C / Super+V, with Tern tagged as a terminal |
 
 Omarchy's packaged terminal-class matcher does not include `so.stencil.tern`.
-The user-only rule in `hypr/hyprland.lua` adds `terminal`, so the existing
-universal clipboard bindings send Ctrl+Insert / Shift+Insert instead of
-Ctrl+C / Ctrl+V. Install that rule in the live user config too; this file is
-not symlinked. Do not edit packaged Omarchy defaults or bind away terminal
-Ctrl+C. Direct Tern alternatives are Ctrl+Shift+C / Ctrl+Shift+V.
+The clipboard installer above loads `hypr/tern-clipboard.lua` to add the
+`terminal` tag, so universal clipboard bindings send Ctrl+Insert / Shift+Insert
+instead of Ctrl+C / Ctrl+V. Do not edit packaged Omarchy defaults or bind away
+terminal Ctrl+C. Direct Tern alternatives are Ctrl+Shift+C / Ctrl+Shift+V.
 
 Ctrl navigation does not wrap at tiled-layout boundaries. In Neovim it
 works in normal, insert, and terminal modes. Floating/PiP panes retain the
@@ -135,6 +187,7 @@ uses `nfragakis@fw-dev.taildd43c0.ts.net`.
 Keep both clients and the dev-host service on the same Tern release.
 The trial aligned all three to 0.6.3 with `tern remote update fw-dev`;
 the remote daemon's handoff preserved the running editor and agent.
+See [TERN.md](TERN.md) for the later 0.7.0 checks and current catalog limits.
 
 ### Tailscale access and shared-session status
 
