@@ -66,7 +66,10 @@ installer backs up the live Hyprland input file before replacing it.
 
 `tern/settings.json` preserves the existing tmux-style preset, Ctrl+S prefix,
 Alt pane navigation, host switching, and herdr dashboard shortcuts. The trial
-adds Ctrl+h/j/k/l through `tern/plugins/nvim-nav`. `tern/plugins/hostkeys`
+adds Ctrl+h/k/l through `tern/plugins/nvim-nav`; Ctrl+J sends a literal LF
+(`text:\x0a`) to the running program so agent prompts can insert a newline.
+Neovim's existing Ctrl+J mapping still handles downward navigation and sends
+edge requests through the title bridge. `tern/plugins/hostkeys`
 preserves the existing custom commands. On the laptop, `nvim-nav` is linked
 to this repo and `hostkeys` remains a copied installation. On `fwdesktop`,
 both plugins are linked to `~/dot-files`. Settings and Neovim files remain
@@ -84,6 +87,7 @@ The trial did not start another app server or Supabase instance.
 | Toggle local / fw-dev | Ctrl+S, Tab |
 | Choose commercialize-app | Ctrl+S, S; select the session |
 | Navigate Neovim splits, then adjacent Tern panes at the edge | Ctrl+h/j/k/l |
+| Send a newline to the running program (Neovim retains its navigation mapping) | Ctrl+J |
 | Always navigate outer Tern panes using the existing behavior | Alt+h/j/k/l |
 | Previous / next tab | Alt+Left / Alt+Right |
 | Open the existing remote herdr dashboard | Ctrl+S, A |
