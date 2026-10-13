@@ -3,6 +3,13 @@
 Personal configuration for an Omarchy 4 / Hyprland desktop. Read this before
 setting it up on a machine, and before assuming a file here is the one in use.
 
+Use a single checkout at `~/Work/personal/dot-files`. The former `~/dot-files`
+checkout was archived and removed on the desktop; its shell/plugin links,
+Whisper service link, and Tern plugin registrations now use the canonical path.
+Do not recreate the redundant checkout. Pulling updates linked files, but
+copied configuration still needs the explicit installation or merge described
+below; there is no automatic whole-machine sync.
+
 ## What is actually installed, and what is not
 
 `omarchy/` and the keyboard input configuration have installers.

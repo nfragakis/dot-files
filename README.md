@@ -125,7 +125,7 @@ Neovim's existing Ctrl+J mapping still handles downward navigation and sends
 edge requests through the title bridge. `tern/plugins/hostkeys`
 preserves the existing custom commands. On the laptop, `nvim-nav` is linked
 to this repo and `hostkeys` remains a copied installation. On `fwdesktop`,
-both plugins are linked to `~/dot-files`. Settings and Neovim files remain
+both plugins are linked to `~/Work/personal/dot-files`. Settings and Neovim files remain
 installed copies, not symlinks.
 
 The trial initially opened `commercialize-app` on `fw-dev` in
@@ -165,13 +165,14 @@ Neovim/tmux use outside Tern is unchanged. Keep the established Ghostty +
 tmux/herdr workflow as the independent fallback rather than nesting it to
 evaluate native Tern navigation.
 
-The laptop checkout is `~/Work/personal/dot-files`; `fwdesktop` uses
-`~/dot-files`. Pulling the repo updates linked plugin code:
+The canonical checkout on both clients is `~/Work/personal/dot-files`.
+Do not maintain a second checkout at `~/dot-files`. Pulling the repo updates
+linked plugin code:
 
 ```bash
-git -C ~/dot-files pull --ff-only
-tern plugin link ~/dot-files/tern/plugins/hostkeys
-tern plugin link ~/dot-files/tern/plugins/nvim-nav
+git -C ~/Work/personal/dot-files pull --ff-only
+tern plugin link ~/Work/personal/dot-files/tern/plugins/hostkeys
+tern plugin link ~/Work/personal/dot-files/tern/plugins/nvim-nav
 ```
 
 For a new installation, merge the snapshot's custom keybinds into the live
