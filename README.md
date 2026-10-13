@@ -64,6 +64,10 @@ installer backs up the live Hyprland input file before replacing it.
 The scrolling snapshot keeps general mouse scrolling at 1x and touchpad
 scrolling at 0.5x, with 3x terminal-specific overrides.
 
+The Alt+H/J/K/L window bindings in `hypr/bindings.lua` are removed when Tern
+is focused, leaving Tern's native pane navigation untouched. Outside Tern,
+these keys focus Hyprland windows.
+
 ## Default terminal
 
 The root `xdg-terminals.list` selects Tern for Omarchy's existing Super+Enter
