@@ -21,14 +21,15 @@ when it is missing; that plugin is git-managed by Omarchy, not vendored here,
 and `shell.json` already places it in the bar. `./install-input.sh` installs the
 repo's Hyprland input file and system-wide `keyd` configuration.
 
-Tern clipboard fixes also have an installer: `./install-tern-clipboard.py`
-links `hypr/tern-clipboard.lua` and `omp/extensions/tern-enhanced-paste.ts`,
-and adds the module to the existing Hyprland bindings. `--client` installs only
-the desktop rule; `--host` installs only the omp extension. It backs up conflicts,
-preserves unrelated configuration, and is safe to repeat. See README.md.
+`./install-tern-clipboard.py` installs Tern's upstream Omarchy integration and
+the omp image-paste extension. `--client` clones `tern-forge` into `~/src/forge`
+if absent, links its `omarchy` plugin, and links `hypr/tern-omarchy.lua` into
+the existing bindings. This replaces the old clipboard-only hook and preserves
+Screenshot outside Tern. `--host` installs only the omp extension. Conflicts
+are backed up and unrelated configuration is preserved. See README.md.
 
 **Most other app configurations were copied by hand and are not linked.**
-Except for `hypr/input.lua`, `hypr/tern-clipboard.lua`, the omp clipboard
+Except for `hypr/input.lua`, `hypr/tern-omarchy.lua`, the omp clipboard
 extension, and linked Tern plugins, the files under `ghostty/`, `hypr/`,
 `nvim/`, `opencode/`, `wiremix/`, `zed/`, `tmux.conf`, `pipewire/`, and the
 Tern settings snapshots merely resemble what is installed. Nothing keeps
@@ -64,9 +65,9 @@ deliberately.
 2. **Omarchy config.** `./install-omarchy.sh`. Safe to re-run.
 3. **Keyboard input.** `./install-input.sh` installs `keyd`, its repo-managed
    Caps Lock mapping, and `hypr/input.lua`. Safe to re-run.
-4. **Tern clipboard.** `./install-tern-clipboard.py` on each machine, or
-   `--client` on the Omarchy desktop and `--host` on the machine running omp.
-   Keep the checkout in place because the installed files are symlinks.
+4. **Tern Omarchy integration and clipboard.** `./install-tern-clipboard.py`
+   on each machine, or `--client` on the Omarchy desktop and `--host` on the
+   machine running omp. Keep this checkout and `~/src/forge` in place.
 5. **Everything else.** Copy the directories in by hand, or link them — see
    the warning above about which you have chosen.
    The root `xdg-terminals.list` selects Tern for Omarchy's Super+Enter;

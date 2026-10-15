@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Link Tern clipboard fixes without replacing unrelated Hyprland or omp config."""
+"""Install Tern's Omarchy integration and omp image-paste extension."""
 
 from __future__ import annotations
 
@@ -12,7 +12,8 @@ import sys
 import time
 
 
-REQUIRE = 'require("hypr.tern-clipboard")'
+REQUIRE = 'require("hypr.tern-omarchy")'
+OLD_REQUIRE = 'require("hypr.tern-clipboard")'
 LOCAL_RULE = 'o.window("so\\\\.stencil\\\\.tern", { tag = "+terminal" })'
 LOCAL_COMMENT = "-- Route universal clipboard shortcuts through Tern's local paste action."
 
@@ -20,7 +21,7 @@ LOCAL_COMMENT = "-- Route universal clipboard shortcuts through Tern's local pas
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     roles = parser.add_mutually_exclusive_group()
-    roles.add_argument("--client", action="store_true", help="install only the Omarchy Super+V rule")
+    roles.add_argument("--client", action="store_true", help="install only Tern's Omarchy integration")
     roles.add_argument("--host", action="store_true", help="install only the omp image-paste extension")
     args = parser.parse_args()
     repo = Path(__file__).resolve().parent
@@ -55,17 +56,25 @@ def main() -> int:
         # Read before changing anything: client installation requires Omarchy's Lua config.
         original = bindings.read_text() if install_client else ""
         if install_client:
-            link(repo / "hypr/tern-clipboard.lua", config / "hypr/tern-clipboard.lua", "hypr/tern-clipboard.lua")
+            forge = Path.home() / "src/forge"
+            if not forge.exists():
+                forge.parent.mkdir(parents=True, exist_ok=True)
+                subprocess.run(["git", "clone", "https://github.com/Moti-Velz/tern-forge", str(forge)], check=True)
+            if not (forge / "omarchy/hypr/tern-nav.lua").is_file():
+                raise ValueError(f"{forge} exists but does not contain the Tern Omarchy integration")
+            subprocess.run(["tern", "plugin", "link", str(forge / "omarchy")], check=True)
+            link(repo / "hypr/tern-omarchy.lua", config / "hypr/tern-omarchy.lua", "hypr/tern-omarchy.lua")
             lines = original.splitlines(keepends=True)
-            # Migrate only the exact machine-local fix from the original repair.
-            lines = [line for line in lines if line.strip() not in (LOCAL_RULE, LOCAL_COMMENT)]
-            updated = "".join(lines)
-            if not any(line.strip() == REQUIRE for line in lines):
-                updated = updated.rstrip("\n") + "\n\n" + REQUIRE + "\n"
+            # Replace only the superseded clipboard hooks; keep all personal bindings.
+            lines = [line for line in lines if line.strip() not in (LOCAL_RULE, LOCAL_COMMENT, OLD_REQUIRE, REQUIRE)]
+            updated = "".join(lines).rstrip("\n") + "\n\n" + REQUIRE + "\n"
             if updated != original:
                 backup(bindings, "hypr/bindings.lua", move=False)
                 bindings.write_text(updated)
-                print(f"Enabled Tern clipboard rule in {bindings}")
+                print(f"Enabled Tern Omarchy integration in {bindings}")
+            legacy = config / "hypr/tern-clipboard.lua"
+            if legacy.exists() or legacy.is_symlink():
+                backup(legacy, "hypr/tern-clipboard.lua", move=True)
         if install_host:
             link(repo / "omp/extensions/tern-enhanced-paste.ts", agent / "extensions/tern-enhanced-paste.ts", "omp/tern-enhanced-paste.ts")
         if install_client and os.environ.get("HYPRLAND_INSTANCE_SIGNATURE") and shutil.which("hyprctl"):
@@ -74,9 +83,9 @@ def main() -> int:
             if errors:
                 raise ValueError(errors)
         elif install_client:
-            print("Hyprland is not connected; the rule loads on next login (or run hyprctl reload).")
+            print("Hyprland is not connected; the integration loads on next login (or run hyprctl reload).")
     except (OSError, ValueError, subprocess.CalledProcessError) as error:
-        print(f"Could not install Tern clipboard fixes: {error}", file=sys.stderr)
+        print(f"Could not install Tern integration: {error}", file=sys.stderr)
         return 1
     if install_host:
         print("omp extension installed. Existing sessions: /reload; new sessions load it automatically.")

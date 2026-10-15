@@ -74,7 +74,7 @@ The root `xdg-terminals.list` selects Tern for Omarchy's existing Super+Enter
 binding, with Ghostty as fallback. Install it as described in
 [`tern/README.md`](tern/README.md); `install-omarchy.sh` does not install it.
 
-## Tern clipboard (text and screenshots)
+## Tern Omarchy integration and clipboard
 
 Install both parts on a machine that runs Omarchy and omp:
 
@@ -89,11 +89,17 @@ For separate client and remote-host machines:
 ./install-tern-clipboard.py --host    # Machine running omp inside Tern
 ```
 
-The client installer links `hypr/tern-clipboard.lua` into `~/.config/hypr`
-and adds `require("hypr.tern-clipboard")` to the existing `bindings.lua`.
-It tags Tern as a terminal so Omarchy's universal Super+V invokes Tern's
-local Shift+Insert paste action, including when its pane is remote.
-It migrates the original inline Tern rule without replacing other bindings.
+The client installer clones [tern-forge](https://github.com/Moti-Velz/tern-forge)
+into `~/src/forge` when absent and links its `omarchy` Tern plugin. It links
+`hypr/tern-omarchy.lua` into `~/.config/hypr` and loads it at the end of the
+existing `bindings.lua`, replacing the old clipboard-only hook.
+Super+arrows, swap, resize, close, and new-pane keys act on Tern panes first,
+then fall back to Hyprland. Super+C/V use Tern's Ctrl+Shift+C/V locally,
+including for remote panes. Agent completion/input notifications are enabled.
+The adapter preserves Super+Shift+P as Screenshot outside Tern and opens a
+browser pane inside Tern. The optional Forge Projects plugin and agent-desktop
+are not installed. Existing upstream checkouts are reused, not updated
+automatically. Keep both checkouts in place.
 
 The host installer links `omp/extensions/tern-enhanced-paste.ts` into
 `~/.omp/agent/extensions`. This enables OSC 5522 enhanced paste when the
@@ -106,7 +112,7 @@ Other extensions are left alone. For a custom agent directory, set
 Installation is safe to repeat. Conflicts and modified bindings are backed up
 under `~/.local/state/dot-files/backups/tern-clipboard/<timestamp>-<pid>/`.
 `XDG_CONFIG_HOME` and `XDG_STATE_HOME` are respected. An active Hyprland session
-is reloaded and checked for configuration errors; otherwise the rule loads on
+is reloaded and checked for configuration errors; otherwise the integration loads on
 next login. Existing omp sessions need `/reload`; new sessions load the
 extension automatically.
 
@@ -145,13 +151,11 @@ The trial did not start another app server or Supabase instance.
 | Previous / next tab | Alt+Left / Alt+Right |
 | Open the existing remote herdr dashboard | Ctrl+S, A |
 | Previous / next named session, across hosts | Ctrl+S, Ctrl+K / Ctrl+J |
-| Copy / paste through Omarchy's universal shortcuts | Super+C / Super+V, with Tern tagged as a terminal |
+| Copy / paste through Omarchy's universal shortcuts | Super+C / Super+V, routed through Tern's local clipboard |
 
-Omarchy's packaged terminal-class matcher does not include `so.stencil.tern`.
-The clipboard installer above loads `hypr/tern-clipboard.lua` to add the
-`terminal` tag, so universal clipboard bindings send Ctrl+Insert / Shift+Insert
-instead of Ctrl+C / Ctrl+V. Do not edit packaged Omarchy defaults or bind away
-terminal Ctrl+C. Direct Tern alternatives are Ctrl+Shift+C / Ctrl+Shift+V.
+The Omarchy integration sends Ctrl+Shift+C / Ctrl+Shift+V to Tern, avoiding
+Ctrl+C interrupts and handling the client clipboard for remote panes. Other
+windows keep Omarchy's normal universal copy/paste behavior.
 
 Ctrl navigation does not wrap at tiled-layout boundaries. In Neovim it
 works in normal, insert, and terminal modes. Floating/PiP panes retain the

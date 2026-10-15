@@ -75,4 +75,4 @@ o.bind("SUPER + ALT + SHIFT + F", "File manager (cwd)", { launch = 'flea --gui "
 o.window("com.thisisgm.flea.picker", { tag = "+floating-window" })
 -- flea --picker: end.
 
-require("hypr.tern-clipboard")
+require("hypr.tern-omarchy")
