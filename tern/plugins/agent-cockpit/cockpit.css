@@ -103,6 +103,15 @@
     color: var(--t2);
     border-bottom: 1px solid var(--l2);
 }
+/* The group count slot carries the host name, right-aligned opposite the session. */
+[data-surface='plugin.agent-cockpit.cockpit'] .pk-row.grp .pk-gc {
+    font: 11px/1 var(--mono);
+    color: var(--t3);
+    max-width: 40%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
 [data-surface='plugin.agent-cockpit.cockpit'] .pk-gl {
     font-size: 11px;
     font-weight: 600;
@@ -131,80 +140,76 @@
     white-space: pre !important;
 }
 [data-surface='plugin.agent-cockpit.cockpit'] .pk-bar::before {
-    content: 'j / k  select    scroll sessions    ↵  jump';
+    content: 'j / k  select (wraps)    ↵  jump    ctrl+s b  flag tab';
     font-family: var(--mono);
     font-size: 10px;
     color: var(--t3);
     margin-right: auto;
 }
+/* Each card wears its tab's colour, in place: red is the Ctrl+S B revisit flag, yellow an agent
+   waiting on you, green a finished turn not yet looked at; other colours are the user's own. */
+[data-surface='plugin.agent-cockpit.cockpit'] .pk-row[data-node^='tab-'] {
+    background: color-mix(in srgb, var(--cockpit-tab) 13%, transparent);
+    box-shadow: inset 3px 0 0 var(--cockpit-tab);
+}
+[data-surface='plugin.agent-cockpit.cockpit'] .pk-row[data-node^='tab-'].sel {
+    background: color-mix(in srgb, var(--cockpit-tab) 22%, transparent);
+}
+[data-surface='plugin.agent-cockpit.cockpit'] .pk-row[data-node='tab-red'] { --cockpit-tab: var(--bad); }
+[data-surface='plugin.agent-cockpit.cockpit'] .pk-row[data-node='tab-yellow'] { --cockpit-tab: var(--warn); }
+[data-surface='plugin.agent-cockpit.cockpit'] .pk-row[data-node='tab-green'] { --cockpit-tab: var(--ok); }
+[data-surface='plugin.agent-cockpit.cockpit'] .pk-row[data-node='tab-orange'] { --cockpit-tab: #f0883e; }
+[data-surface='plugin.agent-cockpit.cockpit'] .pk-row[data-node='tab-teal'] { --cockpit-tab: #2bb3a3; }
+[data-surface='plugin.agent-cockpit.cockpit'] .pk-row[data-node='tab-blue'] { --cockpit-tab: var(--accent); }
+[data-surface='plugin.agent-cockpit.cockpit'] .pk-row[data-node='tab-purple'] { --cockpit-tab: #a371f7; }
+[data-surface='plugin.agent-cockpit.cockpit'] .pk-row[data-node='tab-pink'] { --cockpit-tab: #db61a2; }
+[data-surface='plugin.agent-cockpit.cockpit'] .pk-row[data-node='stale']:not(.sel) {
+    opacity: 0.55;
+}
 [data-surface='plugin.agent-cockpit.cockpit'] [data-role='cockpit.detail'] {
     min-width: 0;
-    gap: 18px;
+    gap: 12px;
 }
-[data-surface='plugin.agent-cockpit.cockpit'] [data-role='cockpit.title'] {
-    font-size: 21px;
-    font-weight: 600;
-    letter-spacing: -0.4px;
+/* The native agent row is built for a 40px chat line; give it room as a pane header. */
+[data-surface='plugin.agent-cockpit.cockpit'] [data-role='cockpit.agent'] {
+    padding-bottom: 4px;
 }
-[data-surface='plugin.agent-cockpit.cockpit'] [data-role='cockpit.identity'] {
-    gap: 8px;
-    align-items: center;
-}
-[data-surface='plugin.agent-cockpit.cockpit'] [data-role='cockpit.label'] {
-    font-size: 10px;
-    letter-spacing: 1px;
-    color: var(--t3);
-}
-[data-surface='plugin.agent-cockpit.cockpit'] [data-role='cockpit.source'] {
-    font-size: 10px;
-    color: var(--t3);
-    gap: 4px;
-}
-[data-surface='plugin.agent-cockpit.cockpit'] [data-role='cockpit.activity-panel'] {
-    padding: 12px 14px;
-    gap: 6px;
-    border: 1px solid var(--l2);
-    border-radius: 10px;
-    background: var(--card);
-}
-[data-surface='plugin.agent-cockpit.cockpit'] [data-role='cockpit.workspace'] {
-    font-family: var(--mono);
-    font-size: 12px;
-    color: var(--t2);
+[data-surface='plugin.agent-cockpit.cockpit'] [data-role='cockpit.agent'] .sf-agent-name {
+    font-size: 15px;
 }
 [data-surface='plugin.agent-cockpit.cockpit'] [data-role='cockpit.location'] {
     font-size: 12px;
     color: var(--t3);
 }
-[data-surface='plugin.agent-cockpit.cockpit'] [data-role='cockpit.context'],
-[data-surface='plugin.agent-cockpit.cockpit'] [data-role='cockpit.section'],
-[data-surface='plugin.agent-cockpit.cockpit'] [data-role='cockpit.records'] {
+[data-surface='plugin.agent-cockpit.cockpit'] [data-role='cockpit.workspace'] {
+    margin-top: -8px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--t3);
+}
+/* Usage and git share one ruled block of label / value rows, as in Tern's usage panel. */
+[data-surface='plugin.agent-cockpit.cockpit'] [data-role='cockpit.metrics'] {
     gap: 8px;
+    padding: 12px 0;
+    box-shadow: inset 0 1px 0 var(--l1), inset 0 -1px 0 var(--l1);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    color: var(--t2);
 }
-[data-surface='plugin.agent-cockpit.cockpit'] [data-role='cockpit.context'] {
-    padding: 14px 0;
-    border-top: 1px solid var(--l2);
-    border-bottom: 1px solid var(--l2);
-}
-[data-surface='plugin.agent-cockpit.cockpit'] [data-role='cockpit.prose'] {
+[data-surface='plugin.agent-cockpit.cockpit'] [data-role='cockpit.conversation'] {
     font-size: 13px;
     line-height: 1.5;
 }
-[data-surface='plugin.agent-cockpit.cockpit'] [data-role='cockpit.prose'] .md p {
-    margin: 0;
-}
-[data-surface='plugin.agent-cockpit.cockpit'] [data-role='cockpit.prose'] .md h1,
-[data-surface='plugin.agent-cockpit.cockpit'] [data-role='cockpit.prose'] .md h2,
-[data-surface='plugin.agent-cockpit.cockpit'] [data-role='cockpit.prose'] .md h3 {
-    font-size: 14px;
-    margin: 0 0 6px;
-}
-[data-surface='plugin.agent-cockpit.cockpit'] [data-role='cockpit.records'] {
-    padding-top: 14px;
-    border-top: 1px solid var(--l2);
-    font-size: 11px;
-}
-[data-surface='plugin.agent-cockpit.cockpit'] [data-role='cockpit.empty-detail'] {
+[data-surface='plugin.agent-cockpit.cockpit'] [data-role='cockpit.facts'] {
     font-size: 12px;
+    font-variant-numeric: tabular-nums;
+}
+[data-surface='plugin.agent-cockpit.cockpit'] [data-role='cockpit.facts'] .sf-text {
+    font-size: 10px;
     line-height: 1.5;
+}
+/* The agent header's context meter plays a grow-in on mount; a pane that refreshes must not replay it. */
+[data-surface='plugin.agent-cockpit.cockpit'] .sf-agent-meter .fill {
+    animation: none !important;
+    transition: none !important;
 }

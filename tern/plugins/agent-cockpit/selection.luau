@@ -54,6 +54,8 @@ function selection.snapshot(state, snapshot)
 	state.cursor = state.index and state.rows[state.index].key or nil
 	state.problem = type(snapshot.problem) == "string" and snapshot.problem or nil
 	state.loaded = true
+	-- The window holds the sheet back until every host has answered once (or a short deadline).
+	state.ready = snapshot.ready ~= false
 	local notify = state.cursor ~= nil and (state.force_select or state.cursor ~= previous)
 	state.force_select = false
 	return true, notify
@@ -98,10 +100,13 @@ function selection.key(state, key)
 	local was_g = state.pending_g
 	state.pending_g = false
 	local target
+	-- Single steps wrap past either end; page and jump keys clamp.
 	if key.name == "up" or text == "k" then
 		target = (state.index or 1) - 1
+		if target < 1 then target = #state.rows end
 	elseif key.name == "down" or text == "j" then
 		target = (state.index or 1) + 1
+		if target > #state.rows then target = 1 end
     elseif key.name == "pageup" or key.name == "pageUp" then
         target = (state.index or 1) - (state.page_size or 8)
     elseif key.name == "pagedown" or key.name == "pageDown" then

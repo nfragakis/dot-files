@@ -38,7 +38,7 @@ desktop with `tern plugin list --json`, `hyprctl reload`, and
 
 Run `./install-tern-cockpit.py` from this checkout on each machine running
 Tern. It links `agent-cockpit` and `hostkeys`, merges the `Ctrl+S`, then `A`
-binding, adds Claude Code lifecycle hooks, and adds Codex's `SessionStart`
+(cockpit) and `Ctrl+S`, then `B` (flag tab) bindings, adds Claude Code lifecycle hooks, and adds Codex's `SessionStart`
 identity hook. Codex's `features.hooks` is enabled without rewriting its TOML.
 Existing settings, unrelated hooks, and conflicting plugin installations
 are preserved or backed up under
@@ -47,20 +47,43 @@ are preserved or backed up under
 
 The cockpit is a transient, centered model sheet—not a session tab:
 
-- Agents grouped by machine and Tern session on the left; group headers are
-  nonselectable and keyboard navigation visits agents only.
+- Agents grouped by Tern session on the left, with the session name on the
+  left of each group header and its machine on the right; group headers are
+  nonselectable and keyboard navigation visits agents only. Each card shows
+  how long the agent has been in its current phase; agents idle for an hour
+  or more are dimmed.
 - All detected sessions in one continuous list, without hidden pagination.
   The larger sheet adapts to the window; native scrollbars appear only when
   the list or details actually overflow.
-- The right-hand brief separates current activity or permission waits from
-  the latest request and response, with workspace/model context above and
-  recorded metadata and attribution below.
+- The right-hand brief is a dashboard: title and phase, session and host,
+  a usage strip (context, tokens, cost, subagents), one delivery line
+  (branch, changes, ahead/behind, PR, CI), then Now / Asked / Said.
+  Host and command facts and the exact provenance of every value are in
+  collapsed sections underneath. The context meter appears only when the
+  provider reports capacity (Codex); otherwise the token count is shown.
 - Original omp, Claude Code, and Codex marks; native graphite colors, soft
   state pills, and a centered soft-focus entrance that respects reduced motion.
-- `j` / `k` or arrow keys select; `Enter` opens the exact pane, switching
+- `j` / `k` or arrow keys select and wrap past either end; `Enter` opens the exact pane, switching
   session or connected host as needed. `Escape` returns to the original
   screen. `Home` / `End`, `gg` / `G`, and Page Up / Page Down also navigate.
 - No top header/counts and no raw terminal preview.
+
+### Tab flags
+
+Tab colours double as a to-do signal, whether or not the cockpit is open:
+
+- **Red** is yours: `Ctrl+S`, then `B` toggles it on the focused pane's tab
+  (or, inside the cockpit, the selected agent's tab). Flagged agents' cards
+  get a red wash and a Revisit badge, in place.
+- **Yellow** is automatic while any agent in the tab is waiting on you.
+- **Green** is automatic when an agent finishes a turn you have not looked
+  at; visiting the tab clears it.
+
+Automatic colours only replace a colour the cockpit set itself. A red flag,
+or any colour picked from the tab menu, is never overwritten. Claude Code
+phases come from its lifecycle hooks; omp from Tern's native agent state.
+Codex has no phase source yet (see below), so its tabs only colour yellow
+when Tern itself reports an input wait.
 
 Discovery covers this window's connected sessions and hosts, including
 parked and exited agent panes. The brief shows available model, branch,
@@ -80,23 +103,33 @@ Local metadata is read from the exact running process and its own session
 records, never from the newest transcript in a shared working directory.
 The collector uses bounded reads and runs outside the window's Lua callbacks.
 
-Remote Claude sessions remain visible and navigable, but their live phase
-is explicitly unknown. In the tested Tern 0.8.3 window / 0.8.2 remote setup,
-host `EffectCx:open()` forwards URLs with the receiving window's focused
-pane, not the originating pane. Native smoke testing caught a local Claude
-update attributed to an unrelated remote pane. That transport is not used:
-there is no exposed safe raw-host-to-window pane-ID mapping to repair it.
-Remote enrichment needs a native source-preserving transport or mapping API;
-no title/cwd matching, ID arithmetic, SSH polling, or hidden terminal surfaces
-are used as substitutes. Hooks still record exact lifecycle state on each
-host, and its local window can read those records.
+Remote hosts are read by their own collector. The window runs the remote
+host's installed `metadata.py` over ssh (`BatchMode`, one shared
+ControlMaster connection per host, the address Tern itself connected to).
+A remote pane's window id is `host.id × 2^44 +` the id its programs see as
+`TERN_PANE`; this was checked against every live fw-dev agent. The mapping
+only names a candidate: the remote collector still requires the pane's
+foreground process, its `TERN_PANE`, daemon socket, PID and start time to
+match before anything is attributed, exactly as for local panes. Host
+`EffectCx:open()` is still not used for metadata, because it forwards with
+the receiving window's focused pane. If ssh fails, the plugin is missing, or
+the remote copy is older than the window's (a protocol number), the pane
+says so instead of showing stale or borrowed data.
+
+omp appends to its transcript without holding it open. Its session is the
+one OMP records for the process's own terminal under
+`~/.omp/agent/terminal-sessions/pts-N`, trusted only when written during
+that process's lifetime, else the process's own `--resume` file. The
+context window comes from OMP's own model catalog (`models.db`). Records
+over 1 MiB (attachments, tool output) are skipped and disclosed rather than
+voiding the session's totals.
 
 Restart Claude Code and Codex after installing or changing their hooks;
 pre-hook sessions cannot be retroactively attributed safely. Hook records
 must match the pane, daemon socket, process ID, and process start time.
 An unprompted session may have an identity but no transcript or model yet.
-Recorded transcript metadata is not proof of live activity. Usage is the
-latest provider response record, not a session total or cost estimate.
+Recorded transcript metadata is not proof of live activity. Costs are the
+provider's own estimates, not billing.
 
 Codex's shared app-server cannot currently prove which TUI owns a session;
 those records are deliberately rejected. Exact-pane Codex metadata was

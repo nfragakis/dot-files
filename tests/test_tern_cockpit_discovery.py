@@ -119,12 +119,36 @@ assert(discovery.clean('hello\27\nworld', 20) == 'hello world')
 assert(discovery.clean('αβγδε', 3) == 'αβγ…')
 ''')
 
+    def test_disconnect_withholds_live_timings_but_keeps_last_command_result(self) -> None:
+        self.run_lua(r'''
+local pane = {
+    pane=17, kind='terminal', program='claude', cwd='/repo', title='Agent',
+    running={line='claude --resume',ms=120000},
+    last={line='git status',status=0,took_ms=25},
+}
+local host = {id=2,name='remote',kind='remote',state='connected',rtt_ms=18,panes={17}}
+local function current()
+    return discovery.collect({pane},{},{host},{},{},{})[1]
+end
+assert(current().command_ms == 120000 and current().host_latency_ms == 20)
+host.state = 'reconnecting'
+local stale = current()
+assert(stale.host_state == 'reconnecting' and stale.status == 'unknown')
+assert(stale.host_latency_ms == nil and stale.command_ms == nil)
+assert(stale.last_exit == 0 and stale.last_command == 'git status')
+host.state = 'connected'
+assert(current().command_ms == 120000 and current().host_latency_ms == 20)
+pane.exited = 9
+assert(current().process_exit == 9 and current().status == 'failed' and current().command_ms == nil)
+''')
+
     def test_local_lifecycle_transitions_keep_remote_unknown_and_invalidate_provider_changes(self) -> None:
         self.run_lua(r'''
 local directory = arg[1]:gsub("discovery%.luau$", "")
 local remote, clock, serial, focused = 17592186044423, 0, 0, 7
 local values, timers, events, snapshots = {}, {}, {}, {}
 local open, cx
+local commands, colors = {}, {}
 local panes = {
     {pane=7,kind="agent",program="claude",title="Same project",cwd="/same",tab=1},
     {pane=remote,kind="agent",program="claude",title="Same project",cwd="/same",tab=2},
@@ -172,7 +196,7 @@ end
 cx={
     session={
         panes=function() return panes end,pane=function(_,id) return pane(id) end,
-        tabs=function() return {{id=1,session=1},{id=2,session=2}} end,focused=function() return focused end,
+        tabs=function() return {{id=1,session=1,color=colors[1]},{id=2,session=2,color=colors[2]}} end,focused=function() return focused end,
         event=function(_,_,value)
             if value.act=="cockpit_snapshot" then snapshots[#snapshots+1]=decode(value.value) end
         end,
@@ -186,15 +210,18 @@ cx={
         list=function() return {{id=1,name="Local",host=1},{id=2,name="Remote",host=2}} end,
         current=function() return {id=1} end,
     },
-    layout={focus=function(_,id) focused=id end,float=function() return true end},
+    layout={focus=function(_,id) focused=id end,float=function() return true end,
+        color_tab=function(_,tab,color) colors[tab]=color end},
     new_block=function() panes[#panes+1]={pane=100,kind="block",title="Cockpit"} return 100 end,
+    toast=function() end,
 }
 local fixture={
     plugin={dir=directory},now=function() return clock end,
     timer=function(delay,callback) timers[#timers+1]={due=clock+delay,callback=callback} end,
     json={encode=encode,decode=decode,array=function(value) return value or {} end},
     on=function(name,callback) events[name]=events[name] or {} table.insert(events[name],callback) end,
-    command=function(command) open=command.run end,route={link=function() end},
+    command=function(command) commands[command.id]=command.run end,route={link=function() end},
+    bind=function(chord,fn) commands[chord]=fn end,
     process={run=function(_,options)
         local request=decode(options.stdin)
         local rows={}
@@ -204,24 +231,43 @@ local fixture={
         end
         return {next=function(_,callback)
             timers[#timers+1]={due=clock+1,callback=function()
-                callback({status=0,stdout=encode({rows=rows})},nil,cx)
+                callback({status=0,stdout=encode({rows=rows,protocol=3})},nil,cx)
             end}
         end}
     end},
 }
-local environment=setmetatable({tern=fixture,require=function() return discovery end},{__index=_G})
+local marks=dofile(directory.."marks.luau")
+local environment=setmetatable({tern=fixture,require=function(name) return name=="./marks" and marks or discovery end},{__index=_G})
 assert(loadfile(directory.."window.luau","t",environment))()
+open=commands.open
 open(cx)
+assert(snapshots[#snapshots].ready==false,"the sheet is held until the host's collector answers")
 advance(1)
+assert(snapshots[#snapshots].ready==true,"one answer from every host reveals the sheet")
 assert(row(7).status=="working" and row(7).activity=="Running Read")
 assert(row(7).session_id=="exact-local-session" and row(7).model=="recorded-model")
 assert(row(remote).status=="unknown" and row(remote).session_id==nil,"cross-pane metadata")
 metadata.lifecycle={status="waiting_input",activity="Permission required",event="PermissionRequest",observed_at="2020-01-01T00:00:01.000000Z"}
 advance(6000) advance(1)
 assert(row(7).status=="waiting_input")
+assert(colors[1]=="yellow","an agent asking a question colours its tab yellow")
 metadata.lifecycle={status="idle",activity="Ready",event="Stop",observed_at="2020-01-01T00:00:02.000000Z"}
 advance(6000) advance(1)
 assert(row(7).status=="idle")
+assert(colors[1]==nil and not row(7).done_unseen,"answering is not a finished turn")
+metadata.lifecycle={status="working",activity="Running Bash",event="PreToolUse",observed_at="2020-01-01T00:00:03.000000Z"}
+advance(6000) advance(1)
+metadata.lifecycle={status="idle",activity="Ready",event="Stop",observed_at="2020-01-01T00:00:04.000000Z"}
+advance(6000) advance(1)
+assert(row(7).done_unseen and colors[1]=="green","a finished turn waits for review in green")
+commands.toggle_flag(cx)
+assert(colors[1]=="red","Ctrl+S B flags the selected agent's tab")
+advance(6000) advance(1)
+assert(colors[1]=="red" and row(7).flagged,"automatic colours never replace the manual flag")
+commands.toggle_flag(cx)
+assert(colors[1]==nil)
+advance(6000) advance(1)
+assert(colors[1]=="green","clearing the flag restores the automatic colour")
 assert(row(remote).status=="unknown" and row(remote).model==nil)
 pane(7).exited=2
 event("title",{pane=7}) advance(0)

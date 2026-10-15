@@ -11,6 +11,7 @@ import tempfile
 import unittest
 
 
+FLAG_ACTION = "plugin.agent-cockpit.toggle_flag"
 ROOT = Path(__file__).resolve().parents[1]
 ACTION = "plugin.agent-cockpit.open"
 
@@ -134,6 +135,7 @@ class TernCockpitInstallerTest(unittest.TestCase):
         self.assert_success(self.install())
         expected = json.loads(original)
         expected["keybinds"]["ctrl+s>a"] = ACTION
+        expected["keybinds"]["ctrl+s>b"] = FLAG_ACTION
         self.assertEqual(json.loads(self.settings.read_text()), expected)
         self.assertEqual(stat.S_IMODE(self.settings.stat().st_mode), 0o640)
         saved_settings = list(self.state.rglob("settings.json"))
@@ -154,7 +156,7 @@ class TernCockpitInstallerTest(unittest.TestCase):
         self.assertFalse((self.config / "tern/plugins").exists())
 
     def test_existing_correct_links_and_binding_are_not_rewritten_or_backed_up(self) -> None:
-        original = '{ "keybinds": {"ctrl+s>a": "plugin.agent-cockpit.open"}, "font_size": 17 }\n'
+        original = '{ "keybinds": {"ctrl+s>a": "plugin.agent-cockpit.open", "ctrl+s>b": "plugin.agent-cockpit.toggle_flag"}, "font_size": 17 }\n'
         self.save_settings(original)
         self.plugins.mkdir()
         for name, source in self.sources.items():
@@ -175,7 +177,7 @@ class TernCockpitInstallerTest(unittest.TestCase):
         self.assertEqual([path.read_text() for path in saved], [pointer])
         self.assertEqual((outside / "personal.luau").read_text(), "external source must not be changed\n")
         self.assertFalse(any(path.name == "personal.luau" for path in self.backups()))
-        self.assertEqual(json.loads(self.settings.read_text()), {"keybinds": {"ctrl+s>a": ACTION}})
+        self.assertEqual(json.loads(self.settings.read_text()), {"keybinds": {"ctrl+s>a": ACTION, "ctrl+s>b": FLAG_ACTION}})
         self.assertFalse(any(path.name == "settings.json" for path in self.backups()))
         first = self.backups()
         self.assert_success(self.install())
@@ -194,6 +196,7 @@ class TernCockpitInstallerTest(unittest.TestCase):
         self.assertEqual(self.settings.resolve(), target)
         expected = json.loads(original)
         expected["keybinds"]["ctrl+s>a"] = ACTION
+        expected["keybinds"]["ctrl+s>b"] = FLAG_ACTION
         self.assertEqual(json.loads(target.read_text()), expected)
         self.assertEqual([path.read_text() for path in self.state.rglob("settings.json")], [original])
         self.assertFalse(self.config.exists())
@@ -253,7 +256,7 @@ class TernCockpitInstallerTest(unittest.TestCase):
         self.environment.pop("XDG_STATE_HOME")
         self.assert_success(self.install())
         settings = self.home / ".config/tern/settings.json"
-        self.assertEqual(json.loads(settings.read_text()), {"keybinds": {"ctrl+s>a": ACTION}})
+        self.assertEqual(json.loads(settings.read_text()), {"keybinds": {"ctrl+s>a": ACTION, "ctrl+s>b": FLAG_ACTION}})
         self.assertFalse((self.home / ".local/state").exists())
         self.assertFalse((self.home / ".config/tern/plugins").exists())
 

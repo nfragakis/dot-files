@@ -18,6 +18,9 @@ import tomllib
 
 SHORTCUT = "ctrl+s>a"
 ACTION = "plugin.agent-cockpit.open"
+FLAG_SHORTCUT = "ctrl+s>b"
+FLAG_ACTION = "plugin.agent-cockpit.toggle_flag"
+SHORTCUTS = {SHORTCUT: ACTION, FLAG_SHORTCUT: FLAG_ACTION}
 
 
 def unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
@@ -105,8 +108,8 @@ def main() -> int:
         if "keybinds" in data and not isinstance(data["keybinds"], dict):
             raise ValueError(f"{settings}: keybinds must be a JSON object")
         keybinds = data.setdefault("keybinds", {})
-        changed = keybinds.get(SHORTCUT) != ACTION
-        keybinds[SHORTCUT] = ACTION
+        changed = any(keybinds.get(chord) != action for chord, action in SHORTCUTS.items())
+        keybinds.update(SHORTCUTS)
         updated = json.dumps(data, indent=2) + "\n" if changed else original
         sys.path.insert(0, str(sources[0]))
         import hook_settings
@@ -152,9 +155,9 @@ def main() -> int:
 
         if changed:
             replace_config(settings, updated, "settings.json")
-            print(f"Enabled Ctrl+S then A in {settings}")
+            print(f"Enabled Ctrl+S then A (cockpit) and Ctrl+S then B (flag tab) in {settings}")
         else:
-            print(f"Ctrl+S then A already enabled in {settings}")
+            print(f"Ctrl+S then A and B already enabled in {settings}")
         for index, (path, content) in enumerate(hook_plans):
             replace_config(path, content, f"provider-hooks/{index}-{path.name}")
             print(f"Enabled session metadata hooks in {path}")
