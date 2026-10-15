@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 from pathlib import Path
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 
 PLUGIN = Path(__file__).resolve().parents[1] / "tern/plugins/agent-cockpit"
@@ -34,6 +36,9 @@ class ClaudeMetadataTest(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
         self.config = self.root / "claude"
+        environment = patch.dict(os.environ, {"XDG_CACHE_HOME": str(self.root / "cache")})
+        environment.start()
+        self.addCleanup(environment.stop)
 
     def transcript(self, entries: list[dict], session: str = SESSION, project: str = "workspace") -> Path:
         path = self.config / "projects" / project / f"{session}.jsonl"

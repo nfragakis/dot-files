@@ -17,6 +17,8 @@ import metadata_codex
 import metadata_omp
 from metadata_common import clean, read_object
 
+# Bumped when the window relies on new output; an older copy on a remote host is reported, not trusted.
+PROTOCOL = 3
 MAX_INPUT = 65536
 MAX_PROCESS_OUTPUT = 65536
 MAX_PANES = 32
@@ -28,6 +30,10 @@ _FIELDS = {
     "session_id": 200, "title": 120, "model": 100, "request": 300,
     "last_response": 300, "git_branch": 300, "updated_at": 100,
     "usage": 300, "metadata_source": 200, "transcript_path": 4096,
+    "session_tokens": 300, "session_cost": 300, "context_usage": 300,
+    "subagents": 300, "usage_source": 300,
+    "workspace_branch": 300, "git_status": 300, "git_divergence": 300,
+    "pr_status": 300, "pr_url": 1000, "ci_status": 300, "workspace_source": 300,
 }
 _LIFECYCLE_EVENTS = {
     "SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse",
@@ -188,6 +194,24 @@ def _lifecycle(record: dict) -> dict:
     return {"status": status, "activity": clean(activity, 300), "event": event, "observed_at": observed}
 
 
+_STATS = {"input": int, "output": int, "cache_read": int, "cache_write": int,
+          "context": int, "capacity": int, "agents": int, "cost": float}
+
+
+def _stats(value: object) -> dict:
+    """Only finite, non-negative numbers of the expected kind reach the meters."""
+    if not isinstance(value, dict):
+        return {}
+    result = {}
+    for key, kind in _STATS.items():
+        number = value.get(key)
+        if kind is int and type(number) is int and 0 <= number <= 10**18:
+            result[key] = number
+        elif kind is float and type(number) in (int, float) and 0 <= number <= 10**12 and number == number:
+            result[key] = float(number)
+    return result
+
+
 def _row(item: dict, environ: dict, proc_root: Path, deadline: float) -> dict:
     pane, provider = item.get("pane"), item.get("provider")
     if not isinstance(pane, str) or not pane or len(pane) > 200 or pane.startswith("-") or any(ord(char) < 32 for char in pane):
@@ -207,6 +231,26 @@ def _row(item: dict, environ: dict, proc_root: Path, deadline: float) -> dict:
     started = _started(pid, proc_root)
     if not started:
         return {}
+    if item.get("workspace") is True:
+        import metadata_workspace
+
+        try:
+            cwd = os.readlink(proc_root / str(pid) / "cwd")
+        except OSError:
+            return {"workspace_source": "Working directory unavailable"}
+        result = metadata_workspace.collect(Path(cwd), deadline=deadline)
+        if (_started(pid, proc_root) != started or not _provider(pid, provider, proc_root)
+                or os.readlink(proc_root / str(pid) / "cwd") != cwd):
+            return {}
+        return {field: clean(result.get(field), limit) for field, limit in _FIELDS.items()
+                if clean(result.get(field), limit)}
+    if item.get("lifecycle") is True:
+        # Background tab colouring: the exact owner's hook phase only, no transcript reads.
+        record = _hook(provider, pane, pid, started, environ, proc_root) if provider == "claude" else {}
+        lifecycle = _lifecycle(record) if record else {}
+        if not lifecycle or _started(pid, proc_root) != started:
+            return {}
+        return {"lifecycle": lifecycle}
     record, result = None, {}
     if provider == "omp":
         result = metadata_omp.collect(pid, proc_root)
@@ -230,6 +274,9 @@ def _row(item: dict, environ: dict, proc_root: Path, deadline: float) -> dict:
     if record and _hook(provider, pane, pid, started, environ, proc_root) != record:
         return {}
     output = {field: clean(result.get(field), limit) for field, limit in _FIELDS.items() if clean(result.get(field), limit)}
+    numbers = _stats(result.get("usage_stats"))
+    if numbers:
+        output["usage_stats"] = numbers
     lifecycle = _lifecycle(record) if provider == "claude" and record else {}
     if lifecycle:
         output["session_id"] = record["session_id"]
@@ -279,6 +326,7 @@ def main() -> None:
     finally:
         signal.setitimer(signal.ITIMER_REAL, 0)
         signal.signal(signal.SIGALRM, previous)
+    result["protocol"] = PROTOCOL
     print(json.dumps(result, ensure_ascii=False, separators=(",", ":")))
 
 

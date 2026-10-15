@@ -7,6 +7,7 @@ from pathlib import Path
 import sqlite3
 
 from metadata_common import clean, records
+from metadata_usage import count, counters, fields, remember, scan
 
 
 _THREAD_FIELDS = (
@@ -118,6 +119,62 @@ def _usage(payload: dict) -> str:
     return clean(f"Last model call: {incoming} in / {outgoing} out")
 
 
+def _account(state: dict, record: dict, identity: str) -> None:
+    payload = record.get("payload")
+    if record.get("type") == "session_meta":
+        if not isinstance(payload, dict):
+            state["invalid"] = True
+            return
+        identities = [payload[key] for key in ("id", "session_id") if key in payload]
+        if not identities or any(value != identity for value in identities):
+            state["invalid"] = True
+        return
+    if record.get("type") != "event_msg" or not isinstance(payload, dict):
+        return
+    if payload.get("type") == "collab_agent_spawn_end" and payload.get("sender_thread_id") == identity:
+        child = payload.get("new_thread_id")
+        if isinstance(child, str) and child and child != identity:
+            remember(state, "agents", child, True)
+    if payload.get("type") != "token_count":
+        return
+    info = payload.get("info")
+    if not isinstance(info, dict):
+        return
+    values = counters(info.get("total_token_usage"), ("input_tokens", "output_tokens", "cached_input_tokens", "cache_write_input_tokens"))
+    if values is not None:
+        previous = state.get("cumulative")
+        if previous and any(new < old for old, new in zip(previous[:2], values[:2])):
+            # A reset/rebase is not evidence of the missing interval. Do not
+            # sum snapshots or manufacture a lifetime total across resets.
+            state["reset"] = True
+        state["cumulative"] = values
+        state["ledger"] = {"cumulative": [values, None]}
+    last = info.get("last_token_usage")
+    state.pop("prompt", None)
+    state.pop("capacity", None)
+    if isinstance(last, dict) and count(last.get("input_tokens")):
+        state["prompt"] = last["input_tokens"]
+    if count(info.get("model_context_window")) and info["model_context_window"]:
+        state["capacity"] = info["model_context_window"]
+
+
+def _session_usage(path: Path, identity: str) -> dict:
+    state, coverage = scan("codex", path, identity, _account)
+    if state.get("invalid"):
+        return {}
+    result = fields(state, coverage, "Codex token_count.info.total_token_usage (input includes cached); spawn_end child IDs; root only, excludes agents")
+    numbers = result.get("usage_stats", {})
+    if "input" in numbers and "cache_read" in numbers:
+        # Codex input includes cached tokens; stats mean uncached input for every provider.
+        numbers["input"] = max(0, numbers["input"] - numbers["cache_read"])
+    if coverage.startswith("complete recorded file"):
+        result["session_cost"] = "Unavailable: Codex rollout does not report monetary cost"
+        if "cumulative" in state:
+            result["session_tokens"] = result["session_tokens"].replace("Recorded session:", "Provider cumulative snapshot:")
+            if state.get("reset"):
+                result["session_tokens"] = clean(result["session_tokens"] + "; counter reset/rebase observed, not full session")
+    return result
+
 def _rollout(session_id: str, path: Path) -> tuple[dict, dict]:
     details: dict = {}
     field_times: dict = {}
@@ -171,6 +228,10 @@ def _rollout(session_id: str, path: Path) -> tuple[dict, dict]:
         return {}, {}
     if not validated:
         return {}, {}
+    accounting = _session_usage(path, session_id)
+    if not accounting:
+        return {}, {}
+    details.update(accounting)
     details = {key: value for key, value in details.items() if value}
     details["session_id"] = session_id
     details["transcript_path"] = str(path)
@@ -233,5 +294,7 @@ def collect(session_id: str, transcript_path: Path | None, config_dir: Path) -> 
     except (OSError, ValueError):
         pass
     if details:
+        if "usage_source" not in details:
+            details.update(fields({}, "unavailable: no validated rollout", "Codex exact thread/index metadata only"))
         details["metadata_source"] = "Codex · recorded metadata"
     return details

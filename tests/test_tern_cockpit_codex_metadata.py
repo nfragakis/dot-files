@@ -3,11 +3,13 @@ from __future__ import annotations
 from datetime import datetime
 import importlib.util
 import json
+import os
 from pathlib import Path
 import sqlite3
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 
 PLUGIN = Path(__file__).resolve().parents[1] / "tern/plugins/agent-cockpit"
@@ -43,6 +45,9 @@ class CodexMetadataTest(unittest.TestCase):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.home = Path(temporary.name)
+        environment = patch.dict(os.environ, {"XDG_CACHE_HOME": str(self.home / "cache")})
+        environment.start()
+        self.addCleanup(environment.stop)
 
     def jsonl(self, name: str, entries: list[dict]) -> Path:
         path = self.home / name
@@ -122,9 +127,10 @@ class CodexMetadataTest(unittest.TestCase):
     def test_schema_introspection_allows_missing_optional_columns(self) -> None:
         self.database({"id": "TEXT PRIMARY KEY", "title": "TEXT"}, [{"id": "legacy", "title": "Legacy title"}])
         result = CODEX.collect("legacy", None, self.home)
-        self.assertEqual(result, {
-            "session_id": "legacy", "title": "Legacy title", "metadata_source": "Codex · recorded metadata",
-        })
+        self.assertEqual(result["session_id"], "legacy")
+        self.assertEqual(result["title"], "Legacy title")
+        self.assertEqual(result["metadata_source"], "Codex · recorded metadata")
+        self.assertIn("no validated rollout", result["usage_source"])
 
     def test_unusable_newer_database_can_fall_back_to_exact_older_schema(self) -> None:
         self.database({"cwd": "TEXT", "title": "TEXT"}, [{"cwd": "/same/workspace", "title": "Unattributable"}])
@@ -288,6 +294,7 @@ class CodexMetadataTest(unittest.TestCase):
         self.assertEqual(set(result), {
             "session_id", "model", "request", "last_response", "title", "updated_at",
             "transcript_path", "metadata_source",
+            "session_tokens", "session_cost", "context_usage", "subagents", "usage_source",
         })
 
     def test_broken_database_does_not_hide_valid_direct_rollout(self) -> None:

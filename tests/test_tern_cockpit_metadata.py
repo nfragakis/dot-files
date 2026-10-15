@@ -4,7 +4,9 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -24,6 +26,9 @@ class MetadataTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
+        environment = patch.dict(os.environ, {"XDG_CACHE_HOME": str(self.root / "cache")})
+        environment.start()
+        self.addCleanup(environment.stop)
         self.proc = self.root / "proc"
         self.home = self.root / "home"
         self.state = self.root / "state"
@@ -100,6 +105,39 @@ class MetadataTests(unittest.TestCase):
         value.update(changes)
         return value
 
+    @unittest.skipUnless(shutil.which("git"), "Git is required for workspace observations")
+    def test_workspace_uses_native_process_cwd_not_requested_or_transcript_cwd(self):
+        owned, decoy = self.root / "owned", self.root / "decoy"
+        for directory, branch in ((owned, "owned-branch"), (decoy, "decoy-branch")):
+            subprocess.run(["git", "init", "-q", "-b", branch, str(directory)], check=True, capture_output=True)
+        (self.proc / str(self.pid) / "cwd").symlink_to(owned)
+        item = self.payload["panes"][0]
+        item.update(workspace=True, cwd=str(decoy))
+        row = self.collect()[item["key"]]
+        self.assertIn("owned-branch", row["workspace_branch"])
+        self.assertNotIn("decoy-branch", row["workspace_branch"])
+
+    @unittest.skipUnless(shutil.which("git"), "Git is required for workspace observations")
+    def test_workspace_change_during_collection_drops_previous_repository_data(self):
+        import metadata_workspace
+
+        owned, replacement = self.root / "owned", self.root / "replacement"
+        for directory in (owned, replacement):
+            subprocess.run(["git", "init", "-q", "-b", "main", str(directory)], check=True, capture_output=True)
+        cwd = self.proc / str(self.pid) / "cwd"
+        cwd.symlink_to(owned)
+        self.payload["panes"][0]["workspace"] = True
+        collect = metadata_workspace.collect
+
+        def changing(path, **kwargs):
+            result = collect(path, **kwargs)
+            cwd.unlink()
+            cwd.symlink_to(replacement)
+            return result
+
+        with patch.object(metadata_workspace, "collect", side_effect=changing):
+            self.assertEqual(self.collect(), {})
+
     def test_lifecycle_uses_exact_native_process_not_title_or_cwd(self):
         self.hook(lifecycle=self.lifecycle())
         self.payload.update(title="unrelated title", cwd="/different/project")
@@ -123,6 +161,15 @@ class MetadataTests(unittest.TestCase):
                 self.assertEqual(row["session_id"], "current-session")
                 self.assertNotIn("status", row)
                 self.assertNotIn("failed", row["lifecycle"]["status"])
+
+    def test_lifecycle_probe_returns_only_the_exact_phase(self):
+        self.hook(lifecycle=self.lifecycle())
+        self.payload["panes"][0]["lifecycle"] = True
+        with patch.object(metadata.metadata_claude, "collect", side_effect=AssertionError("transcript read")):
+            row = self.collect()["local:codex"]
+        self.assertEqual(row, {"lifecycle": self.lifecycle()})
+        self.hook(lifecycle=self.lifecycle(), pid=self.pid + 1)
+        self.assertEqual(self.collect(), {}, "the probe keeps exact-owner attribution")
 
     def test_only_exact_hook_owner_exposes_lifecycle(self):
         for changes in (
@@ -378,7 +425,7 @@ class MetadataTests(unittest.TestCase):
         for value in (b"not json", b"[]", b'{"panes":[]}', b" " * 65537):
             with self.subTest(size=len(value)):
                 result = subprocess.run([sys.executable, str(PLUGIN / "metadata.py")], input=value, capture_output=True, check=True, timeout=5)
-                self.assertEqual(json.loads(result.stdout), {"rows": {}})
+                self.assertEqual(json.loads(result.stdout), {"rows": {}, "protocol": metadata.PROTOCOL})
                 self.assertEqual(result.stderr, b"")
 
 

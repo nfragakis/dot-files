@@ -5,6 +5,7 @@ from pathlib import Path
 import re
 
 from metadata_common import clean, records
+from metadata_usage import counters, digest, fields, money, remember, scan
 
 
 _SESSION_UUID = re.compile(
@@ -67,6 +68,73 @@ def _usage(value: object) -> str:
     return clean(text)
 
 
+def _account(state: dict, record: dict, identity: str) -> None:
+    if record.get("isSidechain"):
+        return
+    session = record.get("sessionId")
+    if not isinstance(session, str) or not session:
+        return
+    if session != identity:
+        state["invalid"] = True
+        return
+    tool_result = record.get("toolUseResult")
+    if isinstance(tool_result, dict) and isinstance(tool_result.get("agentId"), str):
+        remember(state, "agents", tool_result["agentId"], True)
+    if record.get("type") == "cost-state":
+        # Actual Claude Code persisted provider snapshot; replace, never add
+        # successive cumulative cost-state values (including after resume).
+        if money(record.get("totalCostUSD")):
+            state["reported_cost"] = record["totalCostUSD"]
+            state["unknown_cost"] = record.get("hasUnknownModelCost") is True
+        model_usage = record.get("modelUsage")
+        if isinstance(model_usage, dict) and model_usage:
+            values = [counters(value, ("inputTokens", "outputTokens", "cacheReadInputTokens", "cacheCreationInputTokens"))
+                      for value in model_usage.values()]
+            if all(value is not None for value in values):
+                state["snapshot"] = [sum(value[index] for value in values) if all(value[index] is not None for value in values) else None
+                                     for index in range(4)]
+        return
+    message = record.get("message")
+    if record.get("type") != "assistant" or not isinstance(message, dict) or message.get("model") == "<synthetic>":
+        return
+    values = counters(message.get("usage"), ("input_tokens", "output_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"))
+    state.pop("prompt", None)
+    if values is None:
+        state["missing_usage"] = True
+        return
+    if all(value is not None for value in (values[0], values[2], values[3])):
+        state["prompt"] = values[0] + values[2] + values[3]
+    key = message.get("id")
+    if isinstance(key, str):
+        previous = state["ledger"].get(digest(key))
+        if previous:
+            # Claude serializes separate blocks/streaming updates with the
+            # same message ID. Usage is cumulative for that message.
+            values = [max(old, new) if old is not None and new is not None else old if new is None else new
+                      for old, new in zip(previous[0], values)]
+    remember(state, "ledger", key, [values, None])
+
+
+def _session_usage(path: Path, identity: str) -> dict:
+    state, coverage = scan("claude", path, identity, _account)
+    if state.get("invalid"):
+        return {}
+    result = fields(state, coverage, "Claude mainline message IDs (agents excluded; input excludes cache); cost-state is provider session snapshot; no live context/agent state")
+    if coverage.startswith("complete recorded file") and "snapshot" in state:
+        snapshot = fields({"ledger": {"snapshot": [state["snapshot"], None]}}, coverage, "")
+        result["session_tokens"] = snapshot["session_tokens"].replace("Recorded session:", "Provider session snapshot:")
+        result["usage_stats"].update({key: value for key, value in zip(
+            ("input", "output", "cache_read", "cache_write"), state["snapshot"]) if value is not None})
+    if coverage.startswith("complete recorded file") and "reported_cost" in state:
+        result["session_cost"] = f"Provider estimate snapshot: ${state['reported_cost']:.6f} USD (not billing)"
+        if not state.get("unknown_cost"):
+            result["usage_stats"]["cost"] = float(state["reported_cost"])
+        if state.get("unknown_cost"):
+            result["session_cost"] += " (incomplete: unknown model cost)"
+    else:
+        result["session_cost"] = "Unavailable: no Claude cost-state totalCostUSD" if coverage.startswith("complete recorded file") else result["session_cost"]
+    return result
+
 def collect(session_id: str, transcript_path: Path | None, config_dir: Path) -> dict:
     """Return bounded, recorded metadata; files never imply live activity."""
     if not isinstance(session_id, str) or not session_id:
@@ -98,10 +166,13 @@ def collect(session_id: str, transcript_path: Path | None, config_dir: Path) -> 
                 title = clean(record.get("customTitle"), limit=120)
                 if title:
                     custom_title = title
-            for source, target in (("gitBranch", "git_branch"), ("timestamp", "updated_at")):
-                value = clean(record.get(source))
-                if value:
-                    result[target] = value
+            value = clean(record.get("gitBranch"))
+            if value:
+                result["git_branch"] = value
+            # Conversation records only: resumes and snapshots also carry timestamps.
+            value = clean(record.get("timestamp")) if kind in ("user", "assistant") else ""
+            if value:
+                result["updated_at"] = value
             message = record.get("message")
             if not isinstance(message, dict):
                 continue
@@ -130,6 +201,10 @@ def collect(session_id: str, transcript_path: Path | None, config_dir: Path) -> 
         return {}
     if not validated:
         return {}
+    accounting = _session_usage(path, session_id)
+    if not accounting:
+        return {}
+    result.update(accounting)
     if custom_title or ai_title:
         result["title"] = custom_title or ai_title
     result.update(
