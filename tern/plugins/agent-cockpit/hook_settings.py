@@ -1,4 +1,4 @@
-"""Plan additive provider SessionStart JSON settings; never write user files.
+"""Plan additive provider lifecycle JSON settings; never write user files.
 
 Codex follows herdr's integration/targets.rs contract: CODEX_HOME/hooks.json
 contains hooks.SessionStart groups, enabled by config.toml [features] hooks=true.
@@ -17,6 +17,17 @@ import tomllib
 
 CONFIG_LIMIT = 1024 * 1024
 CLAUDE_MATCHER = "^(startup|resume|clear|compact|fork)$"
+CLAUDE_EVENTS = {
+    "SessionStart": CLAUDE_MATCHER,
+    "UserPromptSubmit": None,
+    "PreToolUse": None,
+    "PostToolUse": None,
+    "PostToolUseFailure": None,
+    "PermissionRequest": None,
+    "Notification": "^(permission_prompt|idle_prompt)$",
+    "Stop": None,
+    "SessionEnd": None,
+}
 
 
 def _unique_object(pairs: list[tuple[str, object]]) -> dict:
@@ -82,23 +93,23 @@ def _load(path: Path) -> dict:
     return value
 
 
-def _session_groups(value: dict, path: Path) -> list[dict]:
+def _event_groups(value: dict, path: Path, event: str) -> list[dict]:
     hooks = value.setdefault("hooks", {})
     if not isinstance(hooks, dict):
         raise ValueError(f"{path}: hooks must be a JSON object")
-    groups = hooks.setdefault("SessionStart", [])
+    groups = hooks.setdefault(event, [])
     if not isinstance(groups, list):
-        raise ValueError(f"{path}: hooks.SessionStart must be an array")
+        raise ValueError(f"{path}: hooks.{event} must be an array")
     for group in groups:
         if not isinstance(group, dict) or not isinstance(group.get("hooks"), list):
-            raise ValueError(f"{path}: SessionStart groups must contain a hooks array")
+            raise ValueError(f"{path}: {event} groups must contain a hooks array")
         if "matcher" in group and not isinstance(group["matcher"], str):
-            raise ValueError(f"{path}: SessionStart matcher must be a string")
+            raise ValueError(f"{path}: {event} matcher must be a string")
         for hook in group["hooks"]:
             if not isinstance(hook, dict):
-                raise ValueError(f"{path}: SessionStart hook must be an object")
+                raise ValueError(f"{path}: {event} hook must be an object")
             if hook.get("type") == "command" and not isinstance(hook.get("command"), str):
-                raise ValueError(f"{path}: SessionStart command must be a string")
+                raise ValueError(f"{path}: {event} command must be a string")
     return groups
 
 
@@ -114,16 +125,23 @@ def plans(home: Path, recorder: Path, environ: dict[str, str]) -> list[tuple[Pat
     result = []
     for provider, path in (("claude", claude / "settings.json"), ("codex", codex / "hooks.json")):
         value = _load(path)
-        groups = _session_groups(value, path)
+        events = CLAUDE_EVENTS if provider == "claude" else {"SessionStart": None}
         command = f"python3 {shlex.quote(str(recorder))} {provider}"
-        if any(hook.get("type") == "command" and hook.get("command") == command
-               for group in groups for hook in group["hooks"]):
-            continue
-        group = {"hooks": [{"type": "command", "command": command, "timeout": 5}]}
-        if provider == "claude":
-            group["matcher"] = CLAUDE_MATCHER
-        groups.append(group)
-        result.append((path, value))
+        changed = False
+        for event, matcher in events.items():
+            groups = _event_groups(value, path, event)
+            if any(hook.get("type") == "command" and hook.get("command") == command
+                   for group in groups
+                   if group.get("matcher") in (None, "", "*", matcher)
+                   for hook in group["hooks"]):
+                continue
+            group = {"hooks": [{"type": "command", "command": command, "timeout": 5}]}
+            if matcher is not None:
+                group["matcher"] = matcher
+            groups.append(group)
+            changed = True
+        if changed:
+            result.append((path, value))
     return result
 
 

@@ -92,6 +92,71 @@ class MetadataTests(unittest.TestCase):
         self.record_path.write_text(json.dumps(record))
         return record
 
+    def lifecycle(self, **changes):
+        value = {
+            "status": "working", "activity": "Running Read", "event": "PreToolUse",
+            "observed_at": "2020-01-01T00:00:00.000000Z",
+        }
+        value.update(changes)
+        return value
+
+    def test_lifecycle_uses_exact_native_process_not_title_or_cwd(self):
+        self.hook(lifecycle=self.lifecycle())
+        self.payload.update(title="unrelated title", cwd="/different/project")
+        row = self.collect()["local:codex"]
+        self.assertEqual(row["session_id"], "current-session")
+        self.assertEqual(row["lifecycle"], self.lifecycle())
+
+    def test_hook_lifecycle_does_not_depend_on_transcript_creation_or_freshness(self):
+        for status, event, activity in (
+            ("working", "PostToolUseFailure", "Tool failed · continuing"),
+            ("waiting_input", "PermissionRequest", "Permission required"),
+            ("idle", "Stop", "Ready"),
+            ("exited", "SessionEnd", "Session ended"),
+        ):
+            with self.subTest(status=status):
+                phase = self.lifecycle(status=status, event=event, activity=activity)
+                record = self.hook(lifecycle=phase)
+                Path(record["transcript_path"]).unlink()
+                row = self.collect()["local:codex"]
+                self.assertEqual(row["lifecycle"], phase)
+                self.assertEqual(row["session_id"], "current-session")
+                self.assertNotIn("status", row)
+                self.assertNotIn("failed", row["lifecycle"]["status"])
+
+    def test_only_exact_hook_owner_exposes_lifecycle(self):
+        for changes in (
+            {"provider": "codex"}, {"pane": "another-pane"}, {"pid": self.pid + 1},
+            {"started": "old-process"}, {"socket": "/other.sock"}, {"session_id": ""},
+        ):
+            with self.subTest(changes=changes):
+                self.hook(lifecycle=self.lifecycle(), **changes)
+                self.assertEqual(self.collect(), {})
+
+    def test_invalid_lifecycle_cannot_override_recorded_metadata(self):
+        for changes in (
+            {"status": "failed"}, {"event": "TranscriptChanged"}, {"observed_at": "yesterday"},
+            {"observed_at": "2026-01-01T00:00:00+01:00"}, {"activity": {"tool": "private"}},
+            {"activity": "x" * 301},
+        ):
+            with self.subTest(changes=changes):
+                self.hook(lifecycle=self.lifecycle(**changes))
+                row = self.collect()["local:codex"]
+                self.assertEqual(row["last_response"], "Recorded response")
+                self.assertNotIn("lifecycle", row)
+
+    def test_unhooked_process_has_no_fabricated_session_or_phase(self):
+        self.process("claude")
+        self.payload["panes"][0]["provider"] = "claude"
+        self.assertEqual(self.collect(), {})
+
+    def test_codex_hook_cannot_supply_claude_lifecycle(self):
+        record = self.hook("codex", lifecycle=self.lifecycle())
+        Path(record["transcript_path"]).unlink()
+        row = self.collect()["local:codex"]
+        self.assertEqual(row["session_id"], "current-session")
+        self.assertNotIn("lifecycle", row)
+
     def test_hook_identifies_exact_live_codex_thread(self):
         record = self.hook("codex")
         path = Path(record["transcript_path"])

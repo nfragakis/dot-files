@@ -112,6 +112,8 @@ function M.collect(panes, agents, hosts, sessions, tabs, results)
                 activity = activity, status = status, source = source, cwd = cwd,
                 host = host and M.clean(host.name) or "Unknown host",
                 session = session and M.clean(session.name) or (pane.parked and "Parked" or "Unknown session"),
+                host_key = host and string.format("%.0f", host.id) or "unknown",
+                session_key = session and string.format("%.0f", session.id) or (pane.parked and "parked" or "unknown"),
                 model = agent and type(agent.model) == "string" and M.clean(agent.model, 80) or nil,
                 parked = pane.parked == true,
             }
@@ -120,7 +122,7 @@ function M.collect(panes, agents, hosts, sessions, tabs, results)
         end
     end
     table.sort(rows, function(a, b)
-        for _, field in ipairs({ "host", "session", "title", "provider", "key" }) do
+        for _, field in ipairs({ "host", "host_key", "session", "session_key", "title", "provider", "key" }) do
             if a[field] ~= b[field] then return a[field] < b[field] end
         end
         return false

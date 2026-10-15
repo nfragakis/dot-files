@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
-"""Record an exact SessionStart owner, silently; never inspect provider auth files."""
+"""Record exact hook ownership and Claude lifecycle, silently and without auth reads."""
 from __future__ import annotations
 
+from datetime import datetime, timezone
+import fcntl
 import hashlib
 import json
 import os
@@ -10,12 +12,15 @@ import secrets
 import signal
 import stat
 import sys
+import unicodedata
 
 
 INPUT_LIMIT = 65536
 RECORD_LIMIT = 16384
 PROC_LIMIT = 16384
 ANCESTOR_LIMIT = 64
+ACTIVITY_LIMIT = 160
+IDENTITY_KEYS = ("provider", "pane", "pid", "started", "socket", "session_id")
 ENV_KEYS = (
     "HOME", "XDG_STATE_HOME", "TERN_PANE", "TERN_PANE_SOCKET", "TERN_DAEMON_SOCKET",
     "CLAUDE_CONFIG_DIR", "CODEX_HOME", "CODEX_THREAD_ID",
@@ -152,11 +157,104 @@ def _private_directory(state: Path) -> int:
         raise
 
 
+def _activity_text(value: object, limit: int = ACTIVITY_LIMIT) -> str:
+    if not isinstance(value, str):
+        return ""
+    # Prompt text may contain newlines, terminal escapes or bidi controls. Never
+    # persist tool inputs/results; even tool names and prompt previews are bounded.
+    cleaned = "".join(" " if char.isspace() else char
+                      for char in value[:4096]
+                      if char.isspace() or not unicodedata.category(char).startswith("C"))
+    return " ".join(cleaned.split())[:limit].strip()
+
+
+def _lifecycle(payload: dict, observed_at: str) -> dict | None:
+    event = payload.get("hook_event_name")
+    tool = _activity_text(payload.get("tool_name"), 80) or "tool"
+    transitions = {
+        "SessionStart": ("idle", "Ready"),
+        "UserPromptSubmit": ("working", "Prompt submitted"),
+        "PreToolUse": ("working", f"Using {tool}"),
+        "PostToolUse": ("working", f"Finished {tool}"),
+        # A failed tool is evidence of work, not a failed Claude session.
+        "PostToolUseFailure": ("working", f"{tool} returned an error"),
+        "PermissionRequest": ("waiting_input", f"Permission required: {tool}"),
+        "Stop": ("idle", "Response complete"),
+        "SessionEnd": ("exited", "Session ended"),
+    }
+    if event == "Notification":
+        notification = payload.get("notification_type")
+        if notification == "permission_prompt":
+            transition = ("waiting_input", "Permission required")
+        elif notification == "idle_prompt":
+            transition = ("idle", "Waiting for prompt")
+        else:
+            return None
+    else:
+        transition = transitions.get(event) if isinstance(event, str) else None
+    if transition is None:
+        return None
+    status, activity = transition
+    if event == "UserPromptSubmit":
+        prompt = _activity_text(payload.get("prompt"), ACTIVITY_LIMIT - len("Prompt: "))
+        if prompt:
+            activity = f"Prompt: {prompt}"
+    return {"status": status, "activity": activity, "event": event, "observed_at": observed_at}
+
+
+def _previous_record(directory: int, filename: str) -> dict | None:
+    try:
+        fd = os.open(filename, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW | os.O_CLOEXEC,
+                     dir_fd=directory)
+        with os.fdopen(fd, "rb") as stream:
+            if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
+                return None
+            data = stream.read(RECORD_LIMIT + 1)
+        if len(data) > RECORD_LIMIT:
+            return None
+        value = json.loads(data)
+        return value if isinstance(value, dict) else None
+    except (OSError, ValueError, UnicodeError):
+        return None
+
+
+def _may_replace(previous: dict | None, value: dict, event: str) -> bool:
+    if previous is None:
+        return event == "SessionStart"
+    exact = all(previous.get(key) == value[key] for key in IDENTITY_KEYS)
+    if event != "SessionStart" and not exact:
+        return False
+    # Only SessionStart may establish a new owner. An older still-live process
+    # cannot reclaim a pane from a newer provider process, even with a late hook.
+    if event == "SessionStart":
+        old_start = previous.get("started")
+        if isinstance(old_start, str) and old_start.isdigit():
+            if int(old_start) > int(value["started"]):
+                return False
+            if old_start == value["started"] and previous.get("pid") != value["pid"]:
+                return False
+    lifecycle = previous.get("lifecycle")
+    if isinstance(lifecycle, dict):
+        # Hooks have no provider event timestamp. Compare local observation times,
+        # captured before ancestry reads/locking, not the eventual write order.
+        observed = lifecycle.get("observed_at")
+        if isinstance(observed, str) and observed >= value["lifecycle"]["observed_at"]:
+            return False
+        if exact and lifecycle.get("status") == "exited" and event != "SessionStart":
+            return False
+    return True
+
+
+
+
 def record(provider: str, payload: object, environ: dict[str, str], *,
            parent: int | None = None, proc: Path = Path("/proc")) -> Path | None:
-    if provider not in ("claude", "codex") or not isinstance(payload, dict):
+    observed_at = datetime.now(timezone.utc).isoformat(timespec="microseconds").replace("+00:00", "Z")
+    if provider not in ("claude", "codex") or not isinstance(payload, dict) or payload.get("agent_id"):
         return None
-    if payload.get("hook_event_name") != "SessionStart" or payload.get("agent_id"):
+    event = payload.get("hook_event_name")
+    lifecycle = _lifecycle(payload, observed_at) if provider == "claude" else None
+    if (provider == "claude" and lifecycle is None) or (provider == "codex" and event != "SessionStart"):
         return None
     pane = _text(environ.get("TERN_PANE"), 512)
     namespace = _text(environ.get("TERN_PANE_SOCKET") or environ.get("TERN_DAEMON_SOCKET"), 4096)
@@ -185,6 +283,8 @@ def record(provider: str, payload: object, environ: dict[str, str], *,
              "session_id": session, "config_dir": str(config), "socket": namespace}
     if transcript_path is not None:
         value["transcript_path"] = str(transcript_path)
+    if lifecycle is not None:
+        value["lifecycle"] = lifecycle
     data = (json.dumps(value, ensure_ascii=True, separators=(",", ":")) + "\n").encode("utf-8")
     if len(data) > RECORD_LIMIT:
         return None
@@ -192,6 +292,13 @@ def record(provider: str, payload: object, environ: dict[str, str], *,
     temporary = f".record-{os.getpid()}-{secrets.token_hex(8)}"
     created = False
     try:
+        # Lock the stable directory inode, not the replaceable record inode.
+        # Readers still see only complete records, while concurrent hooks perform
+        # ownership checks and replacement in one serialized transaction.
+        fcntl.flock(directory, fcntl.LOCK_EX)
+        filename = record_filename(provider, pane)
+        if provider == "claude" and not _may_replace(_previous_record(directory, filename), value, event):
+            return None
         fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC,
                      0o600, dir_fd=directory)
         created = True
@@ -202,7 +309,7 @@ def record(provider: str, payload: object, environ: dict[str, str], *,
             # Recheck PID reuse/exits after preparing the complete private record.
             if process_stat(pid, proc)[1] != started:
                 return None
-            os.replace(temporary, record_filename(provider, pane),
+            os.replace(temporary, filename,
                        src_dir_fd=directory, dst_dir_fd=directory)
         return state / "tern/agent-cockpit/sessions" / record_filename(provider, pane)
     finally:
@@ -236,8 +343,8 @@ def _expired(_signum, _frame) -> None:
 
 
 if __name__ == "__main__":
-    # Bound even a producer that never closes stdin. SessionStart must not hold
-    # up normal provider launch, and every failure remains silent and successful.
+    # Bound even a producer that never closes stdin. Hooks must not hold up normal
+    # provider activity, and every failure remains silent and successful.
     signal.signal(signal.SIGALRM, _expired)
     signal.setitimer(signal.ITIMER_REAL, 2.0)
     raise SystemExit(main())

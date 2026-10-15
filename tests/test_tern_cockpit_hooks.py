@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from contextlib import redirect_stderr, redirect_stdout
+from datetime import datetime, timezone
 import importlib.util
 import io
 import json
@@ -9,6 +10,7 @@ from pathlib import Path
 import shlex
 import stat
 import tempfile
+import threading
 import tomllib
 import unittest
 from unittest import mock
@@ -68,6 +70,12 @@ class HookRecorderTest(unittest.TestCase):
         self.assertEqual(result.parent, self.state / "tern/agent-cockpit/sessions")
         self.assertEqual(result.name, RECORD.record_filename("claude", "00042"))
         value = json.loads(result.read_text())
+        lifecycle = value.pop("lifecycle")
+        self.assertEqual(lifecycle["status"], "idle")
+        self.assertEqual(lifecycle["activity"], "Ready")
+        self.assertEqual(lifecycle["event"], "SessionStart")
+        self.assertEqual(datetime.fromisoformat(lifecycle["observed_at"].replace("Z", "+00:00")).tzinfo,
+                         timezone.utc)
         self.assertEqual(value, {"provider": "claude", "pane": "00042", "pid": 100,
                                 "started": "123456", "session_id": SESSION,
                                 "transcript_path": self.payload["transcript_path"],
@@ -182,7 +190,7 @@ class HookRecorderTest(unittest.TestCase):
             with self.subTest(missing=key):
                 self.assertIsNone(self.record(environment=environment))
         for change in ({"session_id": ""}, {"session_id": 9}, {"agent_id": "subagent-123"},
-                       {"hook_event_name": "Stop"}, {"session_id": "bad\nidentity"},
+                       {"hook_event_name": "UnsupportedEvent"}, {"session_id": "bad\nidentity"},
                        {"transcript_path": "relative.jsonl"}):
             with self.subTest(payload=change):
                 self.assertIsNone(self.record(payload={**self.payload, **change}))
@@ -202,7 +210,7 @@ class HookRecorderTest(unittest.TestCase):
     def test_native_versioned_claude_and_node_package_ancestors(self) -> None:
         self.process(100, 1, "/home/user/.local/share/claude/versions/2.1.99", ["claude"], "234")
         self.assertEqual(json.loads(self.record().read_text())["started"], "234")
-        self.process(100, 1, "/usr/bin/node", ["node", "/node_modules/@anthropic-ai/claude-code/cli.js"])
+        self.process(100, 1, "/usr/bin/node", ["node", "/node_modules/@anthropic-ai/claude-code/cli.js"], "345")
         self.assertEqual(json.loads(self.record().read_text())["pid"], 100)
 
     def test_argv_mentions_or_spoofed_shell_name_are_not_provider_identity(self) -> None:
@@ -261,6 +269,161 @@ class HookRecorderTest(unittest.TestCase):
         self.assertIsNone(self.record("codex"))
         self.assertFalse(self.state.exists())
 
+    def test_claude_root_lifecycle_tracks_real_events_without_tool_contents(self) -> None:
+        target = self.record()
+        cases = (
+            ("UserPromptSubmit", {"prompt": "Please\n  fix\tthis\x1b[31m \u202ehidden"}, "working", "Prompt: "),
+            ("PreToolUse", {"tool_name": "Bash", "tool_input": {"command": "SECRET input"}}, "working", "Using Bash"),
+            ("PermissionRequest", {"tool_name": "Bash"}, "waiting_input", "Permission required: Bash"),
+            ("Notification", {"notification_type": "permission_prompt", "message": "SECRET notification"},
+             "waiting_input", "Permission required"),
+            ("PostToolUse", {"tool_name": "Bash", "tool_response": "SECRET output"}, "working", "Finished Bash"),
+            ("PostToolUseFailure", {"tool_name": "Read", "error": "SECRET tool error"},
+             "working", "Read returned an error"),
+            ("Stop", {"last_assistant_message": "SECRET answer"}, "idle", "Response complete"),
+            ("Notification", {"notification_type": "idle_prompt"}, "idle", "Waiting for prompt"),
+            ("SessionEnd", {"reason": "prompt_input_exit"}, "exited", "Session ended"),
+        )
+        for event, fields, status, activity in cases:
+            with self.subTest(event=event, fields=fields):
+                self.assertEqual(self.record(payload={**self.payload, **fields, "hook_event_name": event}), target)
+                value = json.loads(target.read_text())
+                lifecycle = value["lifecycle"]
+                self.assertEqual(lifecycle["event"], event)
+                self.assertEqual(lifecycle["status"], status)
+                self.assertTrue(lifecycle["activity"].startswith(activity))
+                self.assertLessEqual(len(lifecycle["activity"]), 160)
+                self.assertFalse(any(ord(char) < 32 or ord(char) == 127 for char in lifecycle["activity"]))
+                self.assertNotIn("\u202e", lifecycle["activity"])
+                self.assertNotIn("SECRET", target.read_text())
+                self.assertEqual(value["session_id"], SESSION)
+
+    def test_multiline_prompt_activity_is_bounded_without_discarding_event(self) -> None:
+        target = self.record()
+        payload = {**self.payload, "hook_event_name": "UserPromptSubmit", "prompt": "A\n" * 10000}
+        self.assertEqual(self.record(payload=payload), target)
+        activity = json.loads(target.read_text())["lifecycle"]["activity"]
+        self.assertTrue(activity.startswith("Prompt: A A A"))
+        self.assertLessEqual(len(activity), 160)
+        self.assertNotIn("\n", activity)
+
+    def test_nonstart_events_cannot_create_or_reassign_an_owner(self) -> None:
+        event = {**self.payload, "hook_event_name": "UserPromptSubmit", "prompt": "work"}
+        self.assertIsNone(self.record(payload=event))
+        target = self.record()
+        before = target.read_bytes()
+        for changed in ({"session_id": "foreign-session"}, {"agent_id": "subagent"}):
+            self.assertIsNone(self.record(payload={**event, **changed}))
+            self.assertEqual(target.read_bytes(), before)
+        for changed in ({"TERN_PANE_SOCKET": "/foreign.sock"}, {"TERN_PANE": "42"}):
+            self.assertIsNone(self.record(payload=event, environment={**self.environment, **changed}))
+            self.assertEqual(target.read_bytes(), before)
+        self.process(100, 1, "/opt/claude", ["claude"], "999999")
+        self.assertIsNone(self.record(payload=event))
+        self.assertEqual(target.read_bytes(), before)
+
+    def test_new_owner_and_session_reject_old_owner_events_and_starts(self) -> None:
+        target = self.record()
+        self.process(300, 1, "/opt/claude", ["claude"], "999999")
+        self.process(200, 300, "/usr/bin/bash", ["bash"])
+        newer = {**self.payload, "session_id": "new-session"}
+        self.assertEqual(self.record(payload=newer), target)
+        before = target.read_bytes()
+        self.process(200, 100, "/usr/bin/bash", ["bash"])
+        for event in ("UserPromptSubmit", "Stop", "SessionEnd", "SessionStart"):
+            self.assertIsNone(self.record(payload={**self.payload, "hook_event_name": event}))
+            self.assertEqual(target.read_bytes(), before)
+        self.process(200, 300, "/usr/bin/bash", ["bash"])
+        self.assertIsNone(self.record(payload={**self.payload, "hook_event_name": "SessionEnd"}))
+        self.assertEqual(target.read_bytes(), before)
+        self.assertEqual(self.record(payload={**newer, "hook_event_name": "UserPromptSubmit"}), target)
+
+    def test_exited_session_is_terminal_until_a_real_sessionstart(self) -> None:
+        target = self.record()
+        self.record(payload={**self.payload, "hook_event_name": "SessionEnd"})
+        before = target.read_bytes()
+        self.assertIsNone(self.record(payload={**self.payload, "hook_event_name": "PostToolUse", "tool_name": "Bash"}))
+        self.assertEqual(target.read_bytes(), before)
+        self.assertEqual(self.record(payload={**self.payload, "source": "resume"}), target)
+        self.assertEqual(json.loads(target.read_text())["lifecycle"]["status"], "idle")
+
+    def test_clear_claims_new_session_but_old_session_events_cannot_reclaim_it(self) -> None:
+        target = self.record()
+        cleared = {**self.payload, "session_id": "cleared-session", "source": "clear"}
+        self.assertEqual(self.record(payload=cleared), target)
+        before = target.read_bytes()
+        for event in ("UserPromptSubmit", "PermissionRequest", "Stop", "SessionEnd"):
+            self.assertIsNone(self.record(payload={**self.payload, "hook_event_name": event}))
+            self.assertEqual(target.read_bytes(), before)
+        self.assertEqual(self.record(payload={**cleared, "hook_event_name": "UserPromptSubmit"}), target)
+
+    def test_existing_trusted_sessionstart_record_can_receive_lifecycle_events(self) -> None:
+        target = self.record()
+        previous = json.loads(target.read_text())
+        previous.pop("lifecycle")
+        target.write_text(json.dumps(previous))
+        self.assertEqual(self.record(payload={**self.payload, "hook_event_name": "PreToolUse",
+                                             "tool_name": "Read"}), target)
+        self.assertEqual(json.loads(target.read_text())["lifecycle"]["activity"], "Using Read")
+
+    def test_delayed_sessionstart_cannot_replace_a_newer_session_observation(self) -> None:
+        target = self.record()
+        with mock.patch.object(RECORD, "datetime") as clock:
+            clock.now.return_value = datetime(2030, 1, 1, 0, 0, 2, tzinfo=timezone.utc)
+            self.assertEqual(self.record(payload={**self.payload, "source": "clear",
+                                                  "session_id": "new-session"}), target)
+            before = target.read_bytes()
+            clock.now.return_value = datetime(2030, 1, 1, 0, 0, 1, tzinfo=timezone.utc)
+            self.assertIsNone(self.record())
+        self.assertEqual(target.read_bytes(), before)
+
+    def test_earlier_concurrent_observation_cannot_overwrite_a_later_event(self) -> None:
+        target = self.record()
+        paused, release = threading.Event(), threading.Event()
+        original_owner = RECORD.provider_owner
+        results, errors = [], []
+
+        def owner(*args, **kwargs):
+            if threading.current_thread().name == "delayed-hook":
+                paused.set()
+                if not release.wait(5):
+                    raise AssertionError("concurrent hook was not released")
+            return original_owner(*args, **kwargs)
+
+        def delayed():
+            try:
+                results.append(self.record(payload={**self.payload, "hook_event_name": "PreToolUse",
+                                                    "tool_name": "Bash"}))
+            except BaseException as error:
+                errors.append(error)
+
+        with mock.patch.object(RECORD, "provider_owner", side_effect=owner):
+            worker = threading.Thread(target=delayed, name="delayed-hook")
+            worker.start()
+            try:
+                self.assertTrue(paused.wait(5))
+                self.record(payload={**self.payload, "hook_event_name": "Stop"})
+                before = target.read_bytes()
+            finally:
+                release.set()
+                worker.join(5)
+            self.assertFalse(worker.is_alive())
+        self.assertEqual(errors, [])
+        self.assertEqual(results, [None])
+        self.assertEqual(target.read_bytes(), before)
+
+    def test_unrelated_notifications_and_codex_events_leave_records_unchanged(self) -> None:
+        target = self.record()
+        before = target.read_bytes()
+        for event in ({"hook_event_name": "Notification", "notification_type": "auth_success"},
+                      {"hook_event_name": "SubagentStop"}, {"hook_event_name": "Stop", "agent_id": "child"}):
+            self.assertIsNone(self.record(payload={**self.payload, **event}))
+            self.assertEqual(target.read_bytes(), before)
+        self.process(100, 1, "/vendor/codex/codex", ["codex"], "999999")
+        codex = self.record("codex")
+        self.assertNotIn("lifecycle", json.loads(codex.read_text()))
+        self.assertIsNone(self.record("codex", payload={**self.payload, "hook_event_name": "Stop"}))
+
     def test_main_dispatches_ordinary_payload_with_only_selected_environment(self) -> None:
         with mock.patch.dict(RECORD.os.environ, self.environment, clear=True):
             with mock.patch.object(RECORD, "record") as record:
@@ -316,9 +479,19 @@ class HookSettingsTest(unittest.TestCase):
             self.assertEqual(hook["timeout"], 5)
             if provider == "claude":
                 self.assertEqual(group["matcher"], "^(startup|resume|clear|compact|fork)$")
+                self.assertEqual(set(value["hooks"]), {"SessionStart", "UserPromptSubmit", "PreToolUse",
+                                                       "PostToolUse", "PostToolUseFailure", "PermissionRequest",
+                                                       "Notification", "Stop", "SessionEnd"})
+                for event, groups in value["hooks"].items():
+                    self.assertEqual(groups[0]["hooks"], [hook])
+                    if event == "Notification":
+                        self.assertEqual(groups[0]["matcher"], "^(permission_prompt|idle_prompt)$")
+                    elif event != "SessionStart":
+                        self.assertNotIn("matcher", groups[0])
             else:
                 self.assertNotIn("matcher", group)
                 self.assertEqual(path.name, "hooks.json")
+                self.assertEqual(set(value["hooks"]), {"SessionStart"})
 
     def test_preserves_unknown_fields_and_existing_hooks_and_is_idempotent(self) -> None:
         original = {"model": "personal", "future": {"enabled": True, "values": [None, 12.5]},
@@ -332,7 +505,8 @@ class HookSettingsTest(unittest.TestCase):
         for path, value in SETTINGS.plans(self.home, self.recorder, {}):
             self.assertEqual(value["model"], original["model"])
             self.assertEqual(value["future"], original["future"])
-            self.assertEqual(value["hooks"]["Stop"], original["hooks"]["Stop"])
+            stop = value["hooks"]["Stop"][:-1] if path == self.claude else value["hooks"]["Stop"]
+            self.assertEqual(stop, original["hooks"]["Stop"])
             self.assertEqual(value["hooks"]["SessionStart"][:-1], original["hooks"]["SessionStart"])
             self.assertEqual(path.read_bytes(), before[path])
             self.fixture(path, value)
@@ -349,6 +523,34 @@ class HookSettingsTest(unittest.TestCase):
         self.assertNotIn(self.claude, dict(SETTINGS.plans(self.home, self.recorder, {})))
         self.assertEqual(json.loads(self.claude.read_text()), planned)
 
+    def test_existing_sessionstart_installation_gets_additive_lifecycle_upgrade(self) -> None:
+        command = f"python3 {shlex.quote(str(self.recorder))} claude"
+        original = {"hooks": {"SessionStart": [{"matcher": SETTINGS.CLAUDE_MATCHER,
+                                                "hooks": [{"type": "command", "command": command,
+                                                           "timeout": 5, "future": "retain"}]}],
+                              "Notification": [{"matcher": "auth_success",
+                                                "hooks": [{"type": "command", "command": "keep auth"}]}]}}
+        self.fixture(self.claude, original)
+        planned = dict(SETTINGS.plans(self.home, self.recorder, {}))[self.claude]
+        self.assertEqual(planned["hooks"]["SessionStart"], original["hooks"]["SessionStart"])
+        self.assertEqual(planned["hooks"]["Notification"][:-1], original["hooks"]["Notification"])
+        self.assertIn("PermissionRequest", planned["hooks"])
+        self.assertIn("PostToolUseFailure", planned["hooks"])
+        self.fixture(self.claude, planned)
+        self.assertNotIn(self.claude, dict(SETTINGS.plans(self.home, self.recorder, {})))
+
+    def test_restricted_own_hook_does_not_prevent_all_tool_lifecycle_installation(self) -> None:
+        command = f"python3 {shlex.quote(str(self.recorder))} claude"
+        original = {"hooks": {"PreToolUse": [{"matcher": "Read",
+                                              "hooks": [{"type": "command", "command": command,
+                                                         "future": "preserve"}]}]}}
+        self.fixture(self.claude, original)
+        planned = dict(SETTINGS.plans(self.home, self.recorder, {}))[self.claude]
+        self.assertEqual(planned["hooks"]["PreToolUse"][:-1], original["hooks"]["PreToolUse"])
+        self.assertNotIn("matcher", planned["hooks"]["PreToolUse"][-1])
+        self.fixture(self.claude, planned)
+        self.assertNotIn(self.claude, dict(SETTINGS.plans(self.home, self.recorder, {})))
+
     def test_custom_configuration_directories_and_tilde_use_supplied_home(self) -> None:
         environment = {"CLAUDE_CONFIG_DIR": "~/custom-claude", "CODEX_HOME": str(self.root / "custom-codex")}
         planned = SETTINGS.plans(self.home, self.recorder, environment)
@@ -363,6 +565,7 @@ class HookSettingsTest(unittest.TestCase):
                      '{"hooks":{"SessionStart":[{"hooks":[9]}]}}',
                      '{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":9}]}]}}',
                      '{"same":1,"same":2}', '{"number":NaN}')
+        malformed += ('{"hooks":{"PostToolUse":{}}}', '{"hooks":{"Notification":[{"matcher":5,"hooks":[]}]}}')
         for content in malformed:
             with self.subTest(content=content):
                 self.fixture(self.claude, content, raw=True)

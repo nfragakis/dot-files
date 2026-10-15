@@ -1,4 +1,4 @@
-/* Selected design: S1 P1 I1 L2 D1 T2 F1 M1. Keep Tern's picker palette and row stride. */
+/* Native picker geometry: 54px agent rows and 32px nonselectable group headers. */
 /* The transient host is a viewport-sized transparent modal carrier from its first frame.
    Native PiP coordinates and entrance transforms must never move the cockpit. */
 .tn-pane.pip[aria-label^='Agent Cockpit · '] {
@@ -86,32 +86,27 @@
     border-top: 0 !important;
     border-left: 1px solid var(--l2) !important;
 }
-/* Keep the scroll rail visible even while Tern fades its native interactive thumb. */
-[data-surface='plugin.agent-cockpit.cockpit'] .pk-list {
-    position: relative;
-}
-[data-surface='plugin.agent-cockpit.cockpit'] .pk-list::before {
-    content: '';
-    position: absolute;
-    top: 2px;
-    bottom: 2px;
-    right: 2px;
-    width: 6px;
-    border-radius: 3px;
-    background: color-mix(in srgb, var(--t3) 35%, transparent);
-    pointer-events: none;
-}
 [data-surface='plugin.agent-cockpit.cockpit'] .pk-scroll {
     position: relative;
     z-index: 1;
     overflow-x: hidden;
-    overflow-y: scroll !important;
+    overflow-y: auto !important;
     scrollbar-width: auto !important;
     scrollbar-color: var(--t2) var(--l2) !important;
 }
-/* Three compact lines inside the native 54px cards stride; never offset its selection bar. */
-[data-surface='plugin.agent-cockpit.cockpit'] .pk-row {
+/* Keep row geometry aligned with the native selection bar and virtual scroller. */
+[data-surface='plugin.agent-cockpit.cockpit'] .pk-row:not(.grp) {
     padding: 8px 10px;
+}
+[data-surface='plugin.agent-cockpit.cockpit'] .pk-row.grp {
+    padding: 0 10px;
+    color: var(--t2);
+    border-bottom: 1px solid var(--l2);
+}
+[data-surface='plugin.agent-cockpit.cockpit'] .pk-gl {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
 }
 [data-surface='plugin.agent-cockpit.cockpit'] .pk-label {
     min-width: 0;
@@ -144,7 +139,7 @@
 }
 [data-surface='plugin.agent-cockpit.cockpit'] [data-role='cockpit.detail'] {
     min-width: 0;
-    gap: 9px;
+    gap: 18px;
 }
 [data-surface='plugin.agent-cockpit.cockpit'] [data-role='cockpit.title'] {
     font-size: 21px;
@@ -163,6 +158,7 @@
 [data-surface='plugin.agent-cockpit.cockpit'] [data-role='cockpit.source'] {
     font-size: 10px;
     color: var(--t3);
+    gap: 4px;
 }
 [data-surface='plugin.agent-cockpit.cockpit'] [data-role='cockpit.activity-panel'] {
     padding: 12px 14px;
@@ -175,4 +171,40 @@
     font-family: var(--mono);
     font-size: 12px;
     color: var(--t2);
+}
+[data-surface='plugin.agent-cockpit.cockpit'] [data-role='cockpit.location'] {
+    font-size: 12px;
+    color: var(--t3);
+}
+[data-surface='plugin.agent-cockpit.cockpit'] [data-role='cockpit.context'],
+[data-surface='plugin.agent-cockpit.cockpit'] [data-role='cockpit.section'],
+[data-surface='plugin.agent-cockpit.cockpit'] [data-role='cockpit.records'] {
+    gap: 8px;
+}
+[data-surface='plugin.agent-cockpit.cockpit'] [data-role='cockpit.context'] {
+    padding: 14px 0;
+    border-top: 1px solid var(--l2);
+    border-bottom: 1px solid var(--l2);
+}
+[data-surface='plugin.agent-cockpit.cockpit'] [data-role='cockpit.prose'] {
+    font-size: 13px;
+    line-height: 1.5;
+}
+[data-surface='plugin.agent-cockpit.cockpit'] [data-role='cockpit.prose'] .md p {
+    margin: 0;
+}
+[data-surface='plugin.agent-cockpit.cockpit'] [data-role='cockpit.prose'] .md h1,
+[data-surface='plugin.agent-cockpit.cockpit'] [data-role='cockpit.prose'] .md h2,
+[data-surface='plugin.agent-cockpit.cockpit'] [data-role='cockpit.prose'] .md h3 {
+    font-size: 14px;
+    margin: 0 0 6px;
+}
+[data-surface='plugin.agent-cockpit.cockpit'] [data-role='cockpit.records'] {
+    padding-top: 14px;
+    border-top: 1px solid var(--l2);
+    font-size: 11px;
+}
+[data-surface='plugin.agent-cockpit.cockpit'] [data-role='cockpit.empty-detail'] {
+    font-size: 12px;
+    line-height: 1.5;
 }

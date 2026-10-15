@@ -2,6 +2,7 @@
 """Read bounded local metadata after exact pane/process/session attribution."""
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
@@ -27,6 +28,10 @@ _FIELDS = {
     "session_id": 200, "title": 120, "model": 100, "request": 300,
     "last_response": 300, "git_branch": 300, "updated_at": 100,
     "usage": 300, "metadata_source": 200, "transcript_path": 4096,
+}
+_LIFECYCLE_EVENTS = {
+    "SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse",
+    "PostToolUseFailure", "PermissionRequest", "Notification", "Stop", "SessionEnd",
 }
 
 
@@ -159,6 +164,30 @@ def _hook(provider: str, pane: str, pid: int, started: str, environ: dict, proc_
     return record
 
 
+def _lifecycle(record: dict) -> dict:
+    """Only an exact owner's hook record can establish a live phase."""
+    value = record.get("lifecycle")
+    if not isinstance(value, dict):
+        return {}
+    status, event, observed = (value.get(name) for name in ("status", "event", "observed_at"))
+    activity = value.get("activity")
+    if status not in ("working", "waiting_input", "idle", "exited", "unknown"):
+        return {}
+    if not isinstance(event, str) or event not in _LIFECYCLE_EVENTS:
+        return {}
+    if not isinstance(activity, str) or len(activity) > 300:
+        return {}
+    if not isinstance(observed, str) or len(observed) > 40 or not observed.endswith("Z"):
+        return {}
+    try:
+        timestamp = datetime.fromisoformat(observed[:-1] + "+00:00")
+    except ValueError:
+        return {}
+    if timestamp.tzinfo != timezone.utc:
+        return {}
+    return {"status": status, "activity": clean(activity, 300), "event": event, "observed_at": observed}
+
+
 def _row(item: dict, environ: dict, proc_root: Path, deadline: float) -> dict:
     pane, provider = item.get("pane"), item.get("provider")
     if not isinstance(pane, str) or not pane or len(pane) > 200 or pane.startswith("-") or any(ord(char) < 32 for char in pane):
@@ -178,7 +207,7 @@ def _row(item: dict, environ: dict, proc_root: Path, deadline: float) -> dict:
     started = _started(pid, proc_root)
     if not started:
         return {}
-    record = None
+    record, result = None, {}
     if provider == "omp":
         result = metadata_omp.collect(pid, proc_root)
     else:
@@ -189,8 +218,8 @@ def _row(item: dict, environ: dict, proc_root: Path, deadline: float) -> dict:
         transcript = Path(record["transcript_path"]) if record.get("transcript_path") else None
         result = adapter.collect(record["session_id"], transcript, Path(record["config_dir"]))
         if not result and (transcript is None or not transcript.exists()):
-            # Providers can emit SessionStart before creating their transcript.
-            # The hook still proves the live session ID, but no model or activity.
+            # SessionStart can precede transcript creation; no transcript freshness
+            # is used to infer activity or the session's live phase.
             name = "Claude" if provider == "claude" else "Codex"
             result = {
                 "session_id": record["session_id"],
@@ -198,9 +227,14 @@ def _row(item: dict, environ: dict, proc_root: Path, deadline: float) -> dict:
             }
     if _started(pid, proc_root) != started or not _provider(pid, provider, proc_root):
         return {}
-    if record is not None and _hook(provider, pane, pid, started, environ, proc_root) != record:
+    if record and _hook(provider, pane, pid, started, environ, proc_root) != record:
         return {}
-    return {field: clean(result.get(field), limit) for field, limit in _FIELDS.items() if clean(result.get(field), limit)}
+    output = {field: clean(result.get(field), limit) for field, limit in _FIELDS.items() if clean(result.get(field), limit)}
+    lifecycle = _lifecycle(record) if provider == "claude" and record else {}
+    if lifecycle:
+        output["session_id"] = record["session_id"]
+        output["lifecycle"] = lifecycle
+    return output
 
 
 def collect(payload: object, environ: dict | None = None, proc_root: Path = PROC_ROOT) -> dict:

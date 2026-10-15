@@ -38,8 +38,8 @@ desktop with `tern plugin list --json`, `hyprctl reload`, and
 
 Run `./install-tern-cockpit.py` from this checkout on each machine running
 Tern. It links `agent-cockpit` and `hostkeys`, merges the `Ctrl+S`, then `A`
-binding, and adds Claude Code and Codex `SessionStart` hooks. Codex's
-`features.hooks` is enabled without rewriting the rest of its TOML.
+binding, adds Claude Code lifecycle hooks, and adds Codex's `SessionStart`
+identity hook. Codex's `features.hooks` is enabled without rewriting its TOML.
 Existing settings, unrelated hooks, and conflicting plugin installations
 are preserved or backed up under
 `~/.local/state/dot-files/backups/tern-cockpit/`. Custom `TERN_CONFIG_DIR`,
@@ -47,10 +47,14 @@ are preserved or backed up under
 
 The cockpit is a transient, centered model sheet—not a session tab:
 
-- Sessions on the left, a structured session brief on the right.
+- Agents grouped by machine and Tern session on the left; group headers are
+  nonselectable and keyboard navigation visits agents only.
 - All detected sessions in one continuous list, without hidden pagination.
-  The larger sheet adapts to the window; a persistent scroll rail and native
-  draggable thumb make overflow discoverable.
+  The larger sheet adapts to the window; native scrollbars appear only when
+  the list or details actually overflow.
+- The right-hand brief separates current activity or permission waits from
+  the latest request and response, with workspace/model context above and
+  recorded metadata and attribution below.
 - Original omp, Claude Code, and Codex marks; native graphite colors, soft
   state pills, and a centered soft-focus entrance that respects reduced motion.
 - `j` / `k` or arrow keys select; `Enter` opens the exact pane, switching
@@ -65,23 +69,44 @@ last response. Missing observations stay explicitly unknown.
 
 ### Metadata boundaries
 
-omp lifecycle state comes from Tern's native agent API. Local metadata is
-read from the exact running process and its own session records, never
-from the newest transcript in a shared working directory. The collector
-uses bounded reads and runs outside the window's Lua callbacks.
+omp lifecycle state comes from Tern's native agent API. Local Claude lifecycle
+state comes from `UserPromptSubmit`, tool start/completion/failure,
+`PermissionRequest`, permission/idle notifications, `Stop`, and `SessionEnd`
+hooks. A failed tool remains working; it does not mark the session failed.
+The activity preview is bounded and sanitized; tool inputs and results are
+not persisted in lifecycle records.
 
-Restart Claude Code and Codex after installing their hooks; existing
+Local metadata is read from the exact running process and its own session
+records, never from the newest transcript in a shared working directory.
+The collector uses bounded reads and runs outside the window's Lua callbacks.
+
+Remote Claude sessions remain visible and navigable, but their live phase
+is explicitly unknown. In the tested Tern 0.8.3 window / 0.8.2 remote setup,
+host `EffectCx:open()` forwards URLs with the receiving window's focused
+pane, not the originating pane. Native smoke testing caught a local Claude
+update attributed to an unrelated remote pane. That transport is not used:
+there is no exposed safe raw-host-to-window pane-ID mapping to repair it.
+Remote enrichment needs a native source-preserving transport or mapping API;
+no title/cwd matching, ID arithmetic, SSH polling, or hidden terminal surfaces
+are used as substitutes. Hooks still record exact lifecycle state on each
+host, and its local window can read those records.
+
+Restart Claude Code and Codex after installing or changing their hooks;
 pre-hook sessions cannot be retroactively attributed safely. Hook records
 must match the pane, daemon socket, process ID, and process start time.
 An unprompted session may have an identity but no transcript or model yet.
-Recorded metadata is not proof that a provider is currently working or idle.
+Recorded transcript metadata is not proof of live activity. Usage is the
+latest provider response record, not a session total or cost estimate.
 
 Codex's shared app-server cannot currently prove which TUI owns a session;
 those records are deliberately rejected. Exact-pane Codex metadata was
 verified with `codex --no-daemon` and an approved SessionStart hook. The
 installer does not bypass provider hook trust or change how Codex launches.
-Remote hosts retain Tern's native observations; local transcript enrichment
-does not read remote transcript files.
+Install the plugin and hooks on every connected Tern host. Disconnected
+hosts have unknown activity; native terminal exits
+take precedence over recorded lifecycle events. Discovery
+covers hosts connected to this window, not arbitrary SSH hosts or detached
+sessions outside Tern.
 
 After pulling updates, rerun the installer. Use **Reload plugins** in an
 already-open Tern window if it retains the previous styling.

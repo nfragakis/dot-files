@@ -55,7 +55,7 @@ local function collect_metadata(cx, rows)
         if not included[item.key] then request[#request + 1] = item end
     end
     metadataOffset = ((metadataOffset + 3) % #candidates) + 1
-    metadataBusy, metadataDue = true, tern.now() + 5000
+    metadataBusy, metadataDue = true, tern.now() + 1500
     local owner, generation = token, metadataGeneration
     tern.process.run({ "python3", tern.plugin.dir .. "/metadata.py" }, {
         stdin = tern.json.encode({ panes = tern.json.array(request) }), timeout_ms = 4000,
@@ -67,6 +67,7 @@ local function collect_metadata(cx, rows)
             if ok and type(value) == "table" and type(value.rows) == "table" then
                 for _, item in ipairs(request) do
                     metadataCache[item.key] = type(value.rows[item.key]) == "table" and value.rows[item.key] or nil
+                    if metadataCache[item.key] then metadataCache[item.key].provider = item.provider end
                 end
                 refresh(currentCx)
             end
@@ -74,8 +75,9 @@ local function collect_metadata(cx, rows)
     end)
 end
 
-local function enrich(row)
+local function enrich(row, live)
     local cached = metadataCache[row.key]
+    if cached and cached.provider ~= row.provider then metadataCache[row.key], cached = nil, nil end
     if not cached then return end
     for _, field in ipairs({ "session_id", "request", "last_response", "git_branch", "updated_at", "usage", "metadata_source" }) do
         if not row[field] then
@@ -89,6 +91,13 @@ local function enrich(row)
         local model = discovery.clean(cached.model, 100)
         if model ~= "" then row.model, row.recorded_model = model, true end
     end
+    if live and row.provider == "claude" and cached.lifecycle
+        and row.status ~= "exited" and row.status ~= "failed" then
+        local phase = cached.lifecycle
+        row.status, row.activity = phase.status, phase.activity ~= "" and phase.activity or nil
+        row.source = "Claude lifecycle hook · " .. phase.event
+        row.observed_at = phase.observed_at
+    end
 end
 
 local function native_metadata(cx, pane, row)
@@ -99,6 +108,10 @@ local function native_metadata(cx, pane, row)
         if row.key == selected and not row.request and message.role == "user" then
             local request = discovery.clean(message.text, 300)
             if request ~= "" then row.request = request end
+        end
+        if row.key == selected and not row.last_response and message.role == "assistant" then
+            local response = discovery.clean(message.text, 300)
+            if response ~= "" then row.last_response = response end
         end
         if row.status == "working" and not toolFound then
             local tools = message.tools or {}
@@ -125,12 +138,25 @@ refresh = function(cx)
     if pane.exited ~= nil then dismiss(cx, true) return end
     if not modalReady then cx.layout:focus(cockpit) end
     send(cx, "cockpit_ping", token)
-    local panes, agents = cx.session:panes(), cx.agents:list()
+    local panes, agents, hosts = cx.session:panes(), cx.agents:list(), cx.hosts:list()
+    local live = {}
+    for _, item in ipairs(panes) do
+        live[item.pane] = item.exited == nil and (not item.error or item.error == "")
+    end
+    for _, host in ipairs(hosts) do
+        if host.kind == "remote" and host.state ~= "connected" then
+            for _, id in ipairs(host.panes or {}) do live[id] = false end
+        end
+    end
+    for key in pairs(metadataCache) do
+        local id = tonumber(key:match("^pane%-(%d+)$"))
+        if not id or live[id] == nil then metadataCache[key] = nil end
+    end
     for _, agent in ipairs(agents) do
         if agent.state == "working" then lastResults[agent.pane] = nil end
     end
     local rows
-    rows, targets = discovery.collect(panes, agents, cx.hosts:list(), cx.sessions:list(), cx.session:tabs(), lastResults)
+    rows, targets = discovery.collect(panes, agents, hosts, cx.sessions:list(), cx.session:tabs(), lastResults)
     local alive = {}
     for _, row in ipairs(rows) do
         local target = targets[row.key]
@@ -138,7 +164,7 @@ refresh = function(cx)
         if row.provider == "omp" and (row.status == "working" or row.key == selected) then
             native_metadata(cx, target.pane, row)
         end
-        enrich(row)
+        enrich(row, live[target.pane])
     end
     for pane in pairs(lastResults) do if not alive[pane] then lastResults[pane] = nil end end
     collect_metadata(cx, rows)
@@ -249,15 +275,19 @@ tern.on("agent_finished", function(event, _cx)
     queue_refresh()
 end)
 tern.on("pane_closed", function(event, _cx)
+    local key = "pane-" .. string.format("%.0f", event.pane)
+    metadataCache[key] = nil
     if event.pane == cockpit then
         cockpit, selected, lastSnapshot = nil, nil, ""
         targets = {}
     end
 end)
-tern.on("command_started", function(event, _cx)
-    metadataCache["pane-" .. string.format("%.0f", event.pane)] = nil
-    metadataDue, metadataGeneration = 0, metadataGeneration + 1
-end)
+for _, name in ipairs({ "command_started", "command_finished" }) do
+    tern.on(name, function(event, _cx)
+        metadataCache["pane-" .. string.format("%.0f", event.pane)] = nil
+        metadataDue, metadataGeneration = 0, metadataGeneration + 1
+    end)
+end
 for _, event in ipairs({ "pane_created", "title" }) do
     tern.on(event, function(event, cx)
         if event.pane == cockpit then
