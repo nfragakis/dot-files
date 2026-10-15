@@ -1,24 +1,11 @@
 --!strict
--- Quick host switching and a herdr dashboard tab on the dev box.
+-- Quick host switching and named-session navigation.
 
 local DEV = "fw-dev"
--- mise's herdr; /usr/bin/herdr on fw-dev is an older client the server rejects.
-local HERDR = "/home/nfragakis/.local/bin/herdr"
 
 local function on_dev(cx): boolean
 	local cur = cx.hosts:current()
 	return cur ~= nil and string.lower(cur.name or "") == DEV
-end
-
-local function find_herdr(cx): number?
-	for _, pane in cx.session:panes() do
-		local program = pane.program or ""
-		local title = string.lower(pane.title or "")
-		if string.find(program, "herdr", 1, true) or string.find(title, "herdr", 1, true) then
-			return pane.pane
-		end
-	end
-	return nil
 end
 
 tern.command({
@@ -52,24 +39,6 @@ tern.command({
 	group = "Hosts",
 	run = function(cx)
 		cx.hosts:switch("local")
-	end,
-})
-
-tern.command({
-	id = "agents",
-	title = "Agents dashboard (herdr on " .. DEV .. ")",
-	icon = "sparkle",
-	group = "Hosts",
-	run = function(cx)
-		if not on_dev(cx) then
-			cx.hosts:switch(DEV)
-		end
-		local pane = find_herdr(cx)
-		if pane then
-			cx.layout:focus(pane)
-		else
-			cx.hosts:terminal(DEV, { command = HERDR })
-		end
 	end,
 })
 

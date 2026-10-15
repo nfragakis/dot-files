@@ -28,14 +28,21 @@ the existing bindings. This replaces the old clipboard-only hook and preserves
 Screenshot outside Tern. `--host` installs only the omp extension. Conflicts
 are backed up and unrelated configuration is preserved. See README.md.
 
+`./install-tern-cockpit.py` links the native agent cockpit and hostkeys to this
+checkout, merges Ctrl+S then A, and installs additive provider metadata hooks.
+It backs up conflicts and preserves unrelated settings. Run it on each Tern
+host after pulling updates; see `tern/README.md` for controls and attribution
+limits. It does not restart running agent sessions.
+
 **Most other app configurations were copied by hand and are not linked.**
 Except for `hypr/input.lua`, `hypr/tern-omarchy.lua`, the omp clipboard
 extension, and linked Tern plugins, the files under `ghostty/`, `hypr/`,
 `nvim/`, `opencode/`, `wiremix/`, `zed/`, `tmux.conf`, `pipewire/`, and the
 Tern settings snapshots merely resemble what is installed. Nothing keeps
 those copied files in step. Tern links `nvim-nav` on the laptop and `fwdesktop`;
-the desktop also links `hostkeys`, while the laptop retains its copied
-hostkeys installation. See README.md for paths and Neovim setup.
+the cockpit installer also links `hostkeys` and `agent-cockpit`, replacing
+copied installations only after backing them up. See README.md for paths and
+Neovim setup.
 
 Two consequences, both of which have already happened:
 
@@ -56,7 +63,7 @@ in caches, backups and `node_modules`. Copy the specific files that matter.
 
 ## Setting up a new machine
 
-Roughly in order. Steps 2–4 have installers; the remaining setup is manual,
+Roughly in order. Steps 2–5 have installers; the remaining setup is manual,
 deliberately.
 
 1. **Packages.** `PACKAGES.md` lists what has to exist and why, with a check
@@ -68,11 +75,14 @@ deliberately.
 4. **Tern Omarchy integration and clipboard.** `./install-tern-clipboard.py`
    on each machine, or `--client` on the Omarchy desktop and `--host` on the
    machine running omp. Keep this checkout and `~/src/forge` in place.
-5. **Everything else.** Copy the directories in by hand, or link them — see
+5. **Tern agent cockpit.** `./install-tern-cockpit.py` on each Tern host.
+   Restart Claude Code and Codex when convenient so their new session hooks
+   can record exact identities; do not interrupt an active agent to do this.
+6. **Everything else.** Copy the directories in by hand, or link them — see
    the warning above about which you have chosen.
    The root `xdg-terminals.list` selects Tern for Omarchy's Super+Enter;
    follow `tern/README.md` to install that preference.
-6. **The steps no script can do.** Below.
+7. **The steps no script can do.** Below.
 
 ## Steps that need a person
 

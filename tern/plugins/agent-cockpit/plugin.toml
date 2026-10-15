@@ -1,0 +1,15 @@
+schema = 1
+id = "agent-cockpit"
+name = "Agent Cockpit"
+version = "1.0.0"
+description = "A native, Vim-navigable view of agents across this window's connected sessions and hosts."
+icon = "sparkle"
+host = "host.luau"
+window = "window.luau"
+styles = ["cockpit.css", "branding.css"]
+
+[[blocks]]
+id = "cockpit"
+title = "Agent Cockpit · opening"
+icon = "sparkle"
+palette = false

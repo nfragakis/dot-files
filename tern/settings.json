@@ -45,7 +45,7 @@
     "ctrl+s>tab": "plugin.hostkeys.toggle_host",
     "ctrl+s>shift+d": "plugin.hostkeys.dev",
     "ctrl+s>shift+l": "plugin.hostkeys.local",
-    "ctrl+s>a": "plugin.hostkeys.agents",
+    "ctrl+s>a": "plugin.agent-cockpit.open",
     "ctrl+s>i": "inbox",
     "ctrl+s>shift+9": "plugin.hostkeys.previous_session",
     "ctrl+s>shift+0": "plugin.hostkeys.next_session",
