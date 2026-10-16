@@ -147,7 +147,12 @@ assert(current().process_exit == 9 and current().status == 'failed' and current(
 local directory = arg[1]:gsub("discovery%.luau$", "")
 local remote, clock, serial, focused = 17592186044423, 0, 0, 7
 local values, timers, events, snapshots = {}, {}, {}, {}
-local open, cx
+local open, cx, route
+local reads, callbackCost, collectorDelay = 0, 0, 1
+local function spend(milliseconds)
+    callbackCost=callbackCost+milliseconds
+    assert(callbackCost<=50,"cockpit blocked the UI past the callback deadline")
+end
 local commands, colors = {}, {}
 local panes = {
     {pane=7,kind="agent",program="claude",title="Same project",cwd="/same",tab=1},
@@ -184,12 +189,16 @@ local function event(name, value)
     for _, callback in ipairs(events[name] or {}) do callback(value,cx) end
 end
 local function advance(milliseconds)
-    clock=clock+milliseconds
-    for _=1,100 do
+    local untilClock=clock+milliseconds
+    for _=1,10000 do
         local found
-        for index,item in ipairs(timers) do if item.due<=clock then found=index break end end
-        if not found then return end
-        table.remove(timers,found).callback(cx)
+        for index,item in ipairs(timers) do
+            if item.due<=untilClock and (not found or item.due<timers[found].due) then found=index end
+        end
+        if not found then clock=untilClock return end
+        local item=table.remove(timers,found)
+        clock,callbackCost=item.due,0
+        item.callback(cx)
     end
     error("unbounded timers")
 end
@@ -201,7 +210,7 @@ cx={
             if value.act=="cockpit_snapshot" then snapshots[#snapshots+1]=decode(value.value) end
         end,
     },
-    agents={list=function() return agents end},
+    agents={list=function() reads=reads+1 spend(20) return agents end},
     hosts={list=function() return {
         {id=1,name="local",kind="local",state="connected",panes={7,100}},
         {id=2,name="remote",kind="remote",state="connected",panes={remote}},
@@ -209,9 +218,14 @@ cx={
     sessions={
         list=function() return {{id=1,name="Local",host=1},{id=2,name="Remote",host=2}} end,
         current=function() return {id=1} end,
+        switch=function() end,
     },
     layout={focus=function(_,id) focused=id end,float=function() return true end,
-        color_tab=function(_,tab,color) colors[tab]=color end},
+        color_tab=function(_,tab,color) colors[tab]=color end,
+        close=function(_,id)
+            for i,item in ipairs(panes) do if item.pane==id then table.remove(panes,i) break end end
+            event("pane_closed",{pane=id})
+        end},
     new_block=function() panes[#panes+1]={pane=100,kind="block",title="Cockpit"} return 100 end,
     toast=function() end,
 }
@@ -220,7 +234,7 @@ local fixture={
     timer=function(delay,callback) timers[#timers+1]={due=clock+delay,callback=callback} end,
     json={encode=encode,decode=decode,array=function(value) return value or {} end},
     on=function(name,callback) events[name]=events[name] or {} table.insert(events[name],callback) end,
-    command=function(command) commands[command.id]=command.run end,route={link=function() end},
+    command=function(command) commands[command.id]=command.run end,route={link=function(fn) route=fn end},
     bind=function(chord,fn) commands[chord]=fn end,
     process={run=function(_,options)
         local request=decode(options.stdin)
@@ -230,20 +244,23 @@ local fixture={
             if item.provider=="claude" then rows[item.key]=clone(metadata) end
         end
         return {next=function(_,callback)
-            timers[#timers+1]={due=clock+1,callback=function()
+            timers[#timers+1]={due=clock+collectorDelay,callback=function()
                 callback({status=0,stdout=encode({rows=rows,protocol=3})},nil,cx)
             end}
         end}
     end},
 }
 local marks=dofile(directory.."marks.luau")
-local environment=setmetatable({tern=fixture,require=function(name) return name=="./marks" and marks or discovery end},{__index=_G})
+local timedDiscovery=setmetatable({collect=function(...)
+    spend(30)
+    return discovery.collect(...)
+end},{__index=discovery})
+local environment=setmetatable({tern=fixture,require=function(name) return name=="./marks" and marks or timedDiscovery end},{__index=_G})
 assert(loadfile(directory.."window.luau","t",environment))()
 open=commands.open
 open(cx)
-assert(snapshots[#snapshots].ready==false,"the sheet is held until the host's collector answers")
-advance(1)
-assert(snapshots[#snapshots].ready==true,"one answer from every host reveals the sheet")
+assert(reads==0 and #snapshots==0,"opening must return with a loading shell before data work")
+advance(500)
 assert(row(7).status=="working" and row(7).activity=="Running Read")
 assert(row(7).session_id=="exact-local-session" and row(7).model=="recorded-model")
 assert(row(remote).status=="unknown" and row(remote).session_id==nil,"cross-pane metadata")
@@ -270,16 +287,17 @@ advance(6000) advance(1)
 assert(colors[1]=="green","clearing the flag restores the automatic colour")
 assert(row(remote).status=="unknown" and row(remote).model==nil)
 pane(7).exited=2
-event("title",{pane=7}) advance(0)
+event("title",{pane=7}) advance(500)
 assert(row(7).status=="failed","terminal exit must win over cached hook idle")
 pane(7).exited=nil
 agents[1].command="codex"
-event("command_started",{pane=7,line="codex"}) advance(0)
+event("command_started",{pane=7,line="codex"}) advance(500)
 assert(row(7).provider=="codex" and row(7).status=="unknown")
 assert(row(7).model==nil and row(7).request==nil,"provider change retained stale metadata")
 agents[1].command=nil
 pane(7).program="omp"
 cx.agents.transcript=function(_,id,options)
+    spend(15)
     assert(id==7 and options.last==30)
     return {
         {role="assistant",text="Old response"},
@@ -288,9 +306,34 @@ cx.agents.transcript=function(_,id,options)
         {role="assistant",text=""},
     }
 end
-event("command_started",{pane=7,line="omp"}) advance(0)
+event("command_started",{pane=7,line="omp"}) advance(500)
 assert(row(7).last_response==discovery.clean("Latest "..string.rep("x",500),300))
 assert(row(7).request==discovery.clean(string.rep("request ",100),300))
+
+-- Closing with discovery queued must not resurrect a surface or steal focus.
+open(cx)
+local published=#snapshots
+focused=7
+open(cx)
+open(cx)
+advance(500)
+assert(#snapshots==published and focused==7 and not pane(100))
+
+-- A response belonging to a previous opening must not populate a new one.
+collectorDelay=800
+agents[1].command="claude"
+pane(7).program="claude"
+metadata.request="old owner request"
+event("command_started",{pane=7,line="claude"})
+open(cx)
+advance(200)
+open(cx)
+metadata.request="new owner request"
+open(cx)
+advance(600)
+assert(row(7).request~="old owner request","stale async result crossed cockpit ownership")
+advance(4000)
+assert(row(7).request=="new owner request","new owner never receives fresh metadata")
 ''')
 
 

@@ -47,6 +47,13 @@ are preserved or backed up under
 
 The cockpit is a transient, centered model sheet—not a session tab:
 
+- The picker shell opens immediately with a loading state and working Close /
+  Escape controls. Agent discovery appears first; transcripts, usage, and
+  repository details fill in afterward without waiting for every remote host.
+  Window work is split across frame-spaced callbacks, with one agent's native
+  transcript enrichment per step, rather than spending Tern's entire 50 ms
+  callback budget inside the open command. Closing, reopening, changing the
+  selection, or invalidating a session discards obsolete queued work.
 - Agents grouped by Tern session on the left, with the session name on the
   left of each group header and its machine on the right; group headers are
   nonselectable and keyboard navigation visits agents only. Each card shows
@@ -149,6 +156,7 @@ the window half too. Regression checks:
 ```bash
 python3 -m unittest discover -s tests -p 'test_tern_cockpit*.py'
 lua tests/test_tern_cockpit_selection.lua
+lua tests/test_tern_cockpit_view.lua
 ```
 
 `cockpit-design-lab.html` is the offline component comparison used to select

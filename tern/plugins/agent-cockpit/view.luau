@@ -248,8 +248,10 @@ local function detail(state)
     local row = selection.current(state)
     if not row then
         return with(ui.col({
-            ui.text(state.loaded and "No agent selected" or "Waiting for observations…"),
-            ui.text({ ui.span("Open omp, Claude Code, or Codex in a connected Tern session.", "muted") }),
+            ui.text(state.loaded and "No agent selected" or "Loading agent sessions…"),
+            ui.text({ ui.span(state.loaded
+                and "Open omp, Claude Code, or Codex in a connected Tern session."
+                or "Discovering agents in connected Tern sessions.", "muted") }),
         }), { key = "detail", role = "cockpit.detail" })
     end
     local provider = providers[row.provider] or { label = "Agent" }
@@ -313,8 +315,6 @@ local function detail(state)
 end
 
 function view.render(state, cx)
-    -- Nothing paints until the first complete snapshot: one clean entrance, no pop-in.
-    if not state.loaded or not state.ready then return { layer = ui.col({ { k = "col", p = { key = "agents" } } }) } end
     local current = selection.current(state)
     local items, order = agents(state, cx)
     return {
@@ -327,7 +327,7 @@ function view.render(state, cx)
                     size = "lg", layout = "cards", query = tern.json.null,
                     preview = "side", selected = current and (current.provider .. ":" .. current.key) or tern.json.null,
                     items = items, order = order, focus = "list",
-                    empty = state.loaded and "No detected agent sessions." or "Connecting to this window…",
+                    empty = state.loaded and "No detected agent sessions." or "Loading agent sessions…",
                     actions = {
                         { id = "focus", label = "Open session", keys = { "enter" }, primary = true },
                         { id = "close", label = "Close", keys = { "esc" }, ["end"] = true },

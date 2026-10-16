@@ -54,8 +54,6 @@ function selection.snapshot(state, snapshot)
 	state.cursor = state.index and state.rows[state.index].key or nil
 	state.problem = type(snapshot.problem) == "string" and snapshot.problem or nil
 	state.loaded = true
-	-- The window holds the sheet back until every host has answered once (or a short deadline).
-	state.ready = snapshot.ready ~= false
 	local notify = state.cursor ~= nil and (state.force_select or state.cursor ~= previous)
 	state.force_select = false
 	return true, notify

@@ -10,7 +10,8 @@ local targets, lastResults = {}, {}
 local lastSnapshot = ""
 local revision, acknowledged = 0, -1
 local wireSnapshot = ""
-local pending = false
+local pending, refreshJob, refreshAgain
+local STEP_MS = 16
 local refresh
 local modalReady = false
 local dismiss
@@ -18,9 +19,6 @@ local dismiss
 local metadataCache, metadataBusy = {}, {}
 local metadataDue, metadataOffset, metadataGeneration = {}, {}, 0
 local workspaceCache, workspaceBusy, workspaceDue = {}, false, 0
--- Opening: the sheet stays hidden until each host's collector has answered once, at most READY_MS.
-local READY_MS = 1500
-local openedAt, opening, answered = 0, false, {}
 -- Tab flags and per-agent phase history; these run whether or not the cockpit is open.
 local ownedColors, doneUnseen, phaseSince = {}, {}, {}
 local lifecycleCache, lifecycleBusy, lifecycleDue = {}, {}, 0
@@ -38,10 +36,12 @@ end
 
 local function queue_refresh()
     if pending or not cockpit then return end
-    pending = true
-    tern.timer(0, function(cx)
-        pending = false
-        if cx then refresh(cx) end
+    local ticket, owner, pane = {}, token, cockpit
+    pending = ticket
+    tern.timer(STEP_MS, function(cx)
+        if pending ~= ticket then return end
+        pending = nil
+        if cx and token == owner and cockpit == pane then refresh(cx) end
     end)
 end
 -- Each host's own collector reads its own processes and records. Remote panes are
@@ -124,7 +124,6 @@ local function collect_metadata(cx, rows)
             local owner, generation = token, metadataGeneration
             collect(group.host, request, function(found, currentCx)
                 metadataBusy[id] = false
-                answered[id] = true
                 if owner ~= token or generation ~= metadataGeneration or not cockpit or not currentCx then return end
                 if found then
                     for _, item in ipairs(request) do
@@ -132,7 +131,7 @@ local function collect_metadata(cx, rows)
                         if metadataCache[item.key] then metadataCache[item.key].provider = item.provider end
                     end
                 end
-                refresh(currentCx)
+                queue_refresh()
             end)
         end
     end
@@ -162,7 +161,7 @@ local function workspace_metadata(cx, row)
             or { workspace_source = hostNotes[place.host.id] or "Workspace lookup unavailable for the exact process" }
         value.provider, value.cwd = provider, cwd
         workspaceCache[key] = value
-        refresh(currentCx)
+        queue_refresh()
     end)
 end
 
@@ -275,20 +274,13 @@ local function track(cx, rows)
     end
 end
 
-local function observe(cx, live)
-    local rows, rowTargets = discovery.collect(cx.session:panes(), cx.agents:list(), cx.hosts:list(),
-        cx.sessions:list(), cx.session:tabs(), lastResults)
-    for _, row in ipairs(rows) do apply_lifecycle(row, live[rowTargets[row.key].pane]) end
-    probe_lifecycle(cx, rows, rowTargets)
-    return rows, rowTargets
-end
 
-local function liveness(cx)
+local function liveness(panes, hosts)
     local live = {}
-    for _, item in ipairs(cx.session:panes()) do
+    for _, item in ipairs(panes) do
         live[item.pane] = item.exited == nil and (not item.error or item.error == "")
     end
-    for _, host in ipairs(cx.hosts:list()) do
+    for _, host in ipairs(hosts) do
         if host.kind == "remote" and host.state ~= "connected" then
             for _, id in ipairs(host.panes or {}) do live[id] = false end
         end
@@ -326,58 +318,8 @@ local function native_metadata(cx, pane, row)
 end
 
 
-refresh = function(cx)
-    -- new_block returns before its pane is visible in the window snapshot.
-    -- Keep the identity until pane_closed, rather than abandoning first open.
-    local pane = cockpit and cx.session:pane(cockpit)
-    if not pane then return end
-    if pane.exited ~= nil then dismiss(cx, true) return end
-    if not modalReady then cx.layout:focus(cockpit) end
-    send(cx, "cockpit_ping", token)
-    local live = liveness(cx)
-    for key in pairs(metadataCache) do
-        local id = tonumber(key:match("^pane%-(%d+)$"))
-        if not id or live[id] == nil then metadataCache[key] = nil end
-    end
-    for key in pairs(workspaceCache) do
-        local id = tonumber(key:match("^pane%-(%d+)$"))
-        if not id or not live[id] then workspaceCache[key] = nil end
-    end
-    for _, agent in ipairs(cx.agents:list()) do
-        if agent.state == "working" then lastResults[agent.pane] = nil end
-    end
-    local rows
-    rows, targets = observe(cx, live)
-    local alive, where = {}, placement(cx)
-    for _, row in ipairs(rows) do
-        local target = targets[row.key]
-        local place = where[target.pane]
-        row.collector_note = place and hostNotes[place.host.id] or nil
-        alive[target.pane] = true
-        if row.provider == "omp" and (row.status == "working" or row.key == selected) then
-            native_metadata(cx, target.pane, row)
-        end
-        enrich(row, live[target.pane])
-        apply_lifecycle(row, live[target.pane])
-        if row.key == selected then workspace_metadata(cx, row) end
-    end
-    track(cx, rows)
-    for pane in pairs(lastResults) do if not alive[pane] then lastResults[pane] = nil end end
-    collect_metadata(cx, rows)
-    if opening then
-        -- Ready once every host with agents has answered, its rows are already cached, or time is up.
-        local waiting = false
-        for _, row in ipairs(rows) do
-            local place = where[targets[row.key].pane]
-            if place and not answered[place.host.id] and not metadataCache[row.key]
-                and (row.provider == "omp" or row.provider == "claude" or row.provider == "codex")
-                and row.status ~= "exited" and row.status ~= "failed" then
-                waiting = true
-            end
-        end
-        if not waiting or tern.now() - openedAt >= READY_MS then opening = false end
-    end
-    local payload = { token = token, rows = tern.json.array(rows), ready = not opening }
+local function publish(cx, rows)
+    local payload = { token = token, rows = tern.json.array(rows) }
     local snapshot = tern.json.encode(payload)
     if snapshot ~= lastSnapshot then
         revision = revision + 1
@@ -391,22 +333,134 @@ refresh = function(cx)
     end
 end
 
+-- Each stage gets a fresh window context and a separate callback budget. A closed,
+-- reopened, reselected or invalidated cockpit must never receive an old stage.
+local function defer(job, work)
+    tern.timer(STEP_MS, function(cx)
+        if refreshJob ~= job then return end
+        if not cx or token ~= job.owner or cockpit ~= job.pane
+            or selected ~= job.selected or metadataGeneration ~= job.generation then
+            refreshJob, refreshAgain = nil, false
+            if cx then queue_refresh() end
+            return
+        end
+        if cockpit then
+            local pane = cx.session:pane(cockpit)
+            if not pane or pane.exited ~= nil then
+                refreshJob = nil
+                if pane then dismiss(cx, true) end
+                return
+            end
+        end
+        work(cx)
+    end)
+end
+
+local function finish_refresh(cx, job)
+    track(cx, job.rows)
+    if job.pane then
+        publish(cx, job.rows)
+        defer(job, function(current)
+            collect_metadata(current, job.rows)
+            refreshJob = nil
+            if refreshAgain then refreshAgain = false queue_refresh() end
+        end)
+    else
+        probe_lifecycle(cx, job.rows, job.targets)
+        refreshJob = nil
+    end
+end
+
+local function enrich_next(job, index)
+    defer(job, function(cx)
+        local row = job.rows[index]
+        if not row then
+            finish_refresh(cx, job)
+            return
+        end
+        local target = job.targets[row.key]
+        if cx.session:pane(target.pane) then
+            if row.provider == "omp" and (row.status == "working" or row.key == selected) then
+                native_metadata(cx, target.pane, row)
+            end
+            enrich(row, job.live[target.pane])
+            apply_lifecycle(row, job.live[target.pane])
+            if row.key == selected then workspace_metadata(cx, row) end
+        end
+        enrich_next(job, index + 1)
+    end)
+end
+
+refresh = function(cx)
+    if refreshJob then refreshAgain = true return end
+    if cockpit then
+        local pane = cx.session:pane(cockpit)
+        -- Creation can precede visibility in the window snapshot; pane_created
+        -- will schedule the first observation without doing work in that event.
+        if not pane then return end
+        if pane.exited ~= nil then dismiss(cx, true) return end
+        send(cx, "cockpit_ping", token)
+    end
+    local job = { owner = token, pane = cockpit, selected = selected, generation = metadataGeneration }
+    refreshJob, refreshAgain = job, false
+    defer(job, function(current)
+        job.agents = current.agents:list()
+        for _, agent in ipairs(job.agents) do
+            if agent.state == "working" then lastResults[agent.pane] = nil end
+        end
+        defer(job, function(current)
+            job.panes, job.hosts = current.session:panes(), current.hosts:list()
+            job.sessions, job.tabs = current.sessions:list(), current.session:tabs()
+            job.live = liveness(job.panes, job.hosts)
+            defer(job, function(current)
+                job.rows, job.targets = discovery.collect(job.panes, job.agents, job.hosts,
+                    job.sessions, job.tabs, lastResults)
+                defer(job, function(current)
+                    for _, row in ipairs(job.rows) do
+                        apply_lifecycle(row, job.live[job.targets[row.key].pane])
+                    end
+                    if not job.pane then finish_refresh(current, job) return end
+                    targets = job.targets
+                    for key in pairs(metadataCache) do
+                        if not targets[key] then metadataCache[key] = nil end
+                    end
+                    for key in pairs(workspaceCache) do
+                        if not targets[key] or not job.live[targets[key].pane] then workspaceCache[key] = nil end
+                    end
+                    for pane in pairs(lastResults) do
+                        if job.live[pane] == nil then lastResults[pane] = nil end
+                    end
+                    local where = placement(current)
+                    for _, row in ipairs(job.rows) do
+                        local place = where[targets[row.key].pane]
+                        row.collector_note = place and hostNotes[place.host.id] or nil
+                        enrich(row, job.live[targets[row.key].pane])
+                    end
+                    -- Discoveries appear without waiting for transcripts or ssh.
+                    -- Later refreshes retain the enriched view until replacement.
+                    if lastSnapshot == "" then publish(current, job.rows) end
+                    enrich_next(job, 1)
+                end)
+            end)
+        end)
+    end)
+end
+
 local function claim(cx, pane)
     cockpit, selected, lastSnapshot, acknowledged = pane, "pane-" .. string.format("%.0f", previous), "", -1
-    -- Caches survive between opens (entries are keyed by exact pane and provider), so a reopen
-    -- paints complete; collection restarts immediately to refresh them.
+    -- Retain exact-pane caches across opens, but cancel every previous UI job.
+    pending, refreshJob, refreshAgain = nil, nil, false
     metadataDue, workspaceDue = {}, 0
     metadataGeneration = metadataGeneration + 1
-    openedAt, opening, answered = tern.now(), true, {}
-    tern.timer(READY_MS, function(timerCx) if timerCx and cockpit == pane then refresh(timerCx) end end)
     send(cx, "cockpit_claim", token)
-    refresh(cx)
+    queue_refresh()
 end
 
 dismiss = function(cx, restore)
     local pane = cockpit
     cockpit, selected, targets = nil, nil, {}
     modalReady = false
+    pending, refreshJob, refreshAgain = nil, nil, false
     if pane and cx.session:pane(pane) then cx.layout:close(pane) end
     if restore and previous and cx.session:pane(previous) then
         if previousSession then cx.sessions:switch(previousSession) end
@@ -498,6 +552,7 @@ tern.on("pane_closed", function(event, _cx)
     if event.pane == cockpit then
         cockpit, selected, lastSnapshot = nil, nil, ""
         targets = {}
+        pending, refreshJob, refreshAgain = nil, nil, false
     end
 end)
 for _, name in ipairs({ "command_started", "command_finished", "cwd" }) do
@@ -509,14 +564,7 @@ for _, name in ipairs({ "command_started", "command_finished", "cwd" }) do
     end)
 end
 for _, event in ipairs({ "pane_created", "title" }) do
-    tern.on(event, function(event, cx)
-        if event.pane == cockpit then
-            -- Deliver the first frame immediately; an occluded window may defer timers.
-            refresh(cx)
-        else
-            queue_refresh()
-        end
-    end)
+    tern.on(event, function(_event, _cx) queue_refresh() end)
 end
 for _, event in ipairs({ "pane_closed", "tab_created", "tab_closed", "cwd", "command_started", "command_finished" }) do
     tern.on(event, function(_event, _cx) queue_refresh() end)
@@ -557,11 +605,7 @@ tern.bind("ctrl+s>b", toggle_flag)
 -- A timer also observes progress changes, which have no public change event.
 -- With the cockpit closed it still tracks phases so tab colours follow agents.
 local function poll(cx)
-    if cx and cockpit then
-        refresh(cx)
-    elseif cx then
-        track(cx, (observe(cx, liveness(cx))))
-    end
+    if cx then refresh(cx) end
     tern.timer(1000, poll)
 end
 tern.timer(1000, poll)
