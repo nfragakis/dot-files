@@ -5,6 +5,7 @@
   "keymap": "tmux",
   "keymap_prefix": "ctrl+s",
   "keybinds": {
+    "ctrl+shift+d": "plugin.diff.open",
     "ctrl+s>r": "reload_config",
     "ctrl+s>shift+\\": "split_right",
     "ctrl+s>minus": "split_down",

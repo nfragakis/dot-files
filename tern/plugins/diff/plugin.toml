@@ -1,0 +1,15 @@
+schema = 1
+id = "diff"
+name = "Diff"
+version = "1.0.1"
+description = "Read-only Git and GitHub diffs with Vim navigation, quick file switching, and viewed marks."
+icon = "git"
+host = "host.luau"
+window = "window.luau"
+styles = ["diff.css"]
+
+[[blocks]]
+id = "viewer"
+title = "Diff"
+icon = "git"
+palette = true
