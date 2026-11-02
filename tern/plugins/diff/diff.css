@@ -1,0 +1,86 @@
+/* Keep syntax, diff lines, selection, inputs and buttons native. */
+[data-surface="plugin.diff.viewer"] [data-role="diff.head"],
+[data-surface="plugin.diff.viewer"] [data-role="diff.summary"],
+[data-surface="plugin.diff.viewer"] [data-role="diff.file-head"],
+[data-surface="plugin.diff.viewer"] [data-role="diff.location"],
+[data-surface="plugin.diff.viewer"] [data-role="diff.paging"],
+[data-surface="plugin.diff.viewer"] [data-role="diff.status"],
+[data-surface="plugin.diff.viewer"] [data-role="diff.dialog-head"] {
+  align-items: center;
+  gap: 12px;
+}
+[data-surface="plugin.diff.viewer"] [data-role="diff.title"],
+[data-surface="plugin.diff.viewer"] [data-role="diff.filename"] {
+  flex: 1 1 0;
+  min-width: 0;
+}
+[data-surface="plugin.diff.viewer"] [data-role="diff.head"] {
+  padding: 10px 12px 6px;
+  border-bottom: 1px solid var(--l2);
+}
+[data-surface="plugin.diff.viewer"] [data-role="diff.summary"] {
+  justify-content: space-between;
+  padding: 2px 12px 8px;
+}
+[data-surface="plugin.diff.viewer"] [data-role="diff.work"] {
+  align-items: flex-start;
+  gap: 0;
+  min-width: 0;
+}
+[data-surface="plugin.diff.viewer"] [data-role="diff.rail"] {
+  flex: 0 0 260px;
+  width: 260px;
+  min-width: 0;
+  padding: 8px;
+  border-right: 1px solid var(--l2);
+}
+[data-surface="plugin.diff.viewer"] [data-role="diff.rail-head"] {
+  justify-content: space-between;
+  align-items: center;
+}
+[data-surface="plugin.diff.viewer"] [data-role="diff.reader"] {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 8px 12px;
+}
+[data-surface="plugin.diff.viewer"] [data-role="diff.viewport"] {
+  gap: 4px;
+  overflow-x: auto;
+}
+[data-surface="plugin.diff.viewer"] [data-role="diff.hunk"] { gap: 0; }
+[data-surface="plugin.diff.viewer"] [data-role="diff.hunk-head"] {
+  padding: 5px 8px;
+  background: var(--code-bg);
+  border-top: 1px solid var(--l2);
+  border-bottom: 1px solid var(--l2);
+}
+[data-surface="plugin.diff.viewer"] [data-role="diff.paging"] {
+  justify-content: space-between;
+  padding-top: 6px;
+}
+[data-surface="plugin.diff.viewer"] [data-role="diff.message"] {
+  flex: 1 1 0;
+  padding: 24px;
+  gap: 12px;
+}
+[data-surface="plugin.diff.viewer"] [data-role="diff.dialog"] {
+  width: 86%;
+  max-width: 1000px;
+  margin: 24px auto;
+  padding: 16px;
+  background: var(--card);
+  border: 1px solid var(--l2);
+  border-radius: 10px;
+  box-shadow: 0 12px 36px #0006;
+  gap: 10px;
+}
+[data-surface="plugin.diff.viewer"] [data-role="diff.dialog-head"] {
+  justify-content: space-between;
+}
+[data-surface="plugin.diff.viewer"] [data-role="diff.dialog-foot"] {
+  justify-content: flex-end;
+}
+[data-surface="plugin.diff.viewer"] [data-role="diff.status"] {
+  border-top: 1px solid var(--l2);
+  padding: 4px 8px;
+}
