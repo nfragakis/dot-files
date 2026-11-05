@@ -18,3 +18,9 @@ These local fixes renew an expired Claude token through its CLI and prevent
 Codex notifications from hiding buffered RPC replies. The installed collector
 functions are an upstream dependency; review these two seams after an Omarchy
 update. The remaining providers use their packaged collectors.
+
+`Main.qml` filters visibility by `usageWindowDays` (1–7 calendar days,
+default 7), using dated activity or positive, unexpired quota usage wholly
+within that period. Lifetime totals and empty subscription meters do not
+keep a provider visible. Hidden providers continue collecting; explicit
+provider exclusions live in the widget entry in `omarchy/shell.json`.

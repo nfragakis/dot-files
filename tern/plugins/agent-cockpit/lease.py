@@ -7,9 +7,10 @@ import sys
 
 
 def main():
-    origin, title = sys.argv[1:3]
-    env = dict(os.environ, TERN_PANE=origin, TERN_WINDOW_KEY="", TERN_WINDOW_SOCKET="")
+    origin, title, window = sys.argv[1:4]
+    env = dict(os.environ, TERN_PANE=origin, TERN_WINDOW_KEY=window, TERN_WINDOW_SOCKET="")
     env.pop("TERN_CONTROL", None)
+    env["PATH"] = os.path.expanduser("~/.local/bin") + os.pathsep + env.get("PATH", "")
     if env.get("TERN_DAEMON_SOCKET"):
         env["TERN_PANE_SOCKET"] = env["TERN_DAEMON_SOCKET"]
 

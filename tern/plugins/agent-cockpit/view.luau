@@ -1,5 +1,6 @@
 local ui = tern.ui
 local selection = require("./selection")
+local discovery = require("./discovery")
 local view = {}
 
 view.LIST_ID = "layer.agents"
@@ -269,6 +270,12 @@ local function detail(state)
     children[#children + 1] = with(ui.col(metrics), { role = "cockpit.metrics" })
     local active = row.status == "working" or row.status == "waiting_input"
     local conversation = {}
+    if row.recap then
+        -- omp's own "where things stand", written once the session went idle.
+        local written = discovery.epoch(row.recap_at)
+        local since = written and age((os.time() - written) * 1000)
+        conversation[#conversation + 1] = { "Recap", { ui.span(row.recap), ui.span(since and ("  · " .. since .. " ago") or "", "dim") } }
+    end
     if row.request then conversation[#conversation + 1] = { "Asked", row.request } end
     local response = row.last_response
     if not response and row.provider == "omp" and not active then response = row.activity end

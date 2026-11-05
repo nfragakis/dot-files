@@ -148,7 +148,7 @@ local directory = arg[1]:gsub("discovery%.luau$", "")
 local remote, clock, serial, focused = 17592186044423, 0, 0, 7
 local values, timers, events, snapshots = {}, {}, {}, {}
 local open, cx, route
-local reads, callbackCost, collectorDelay = 0, 0, 1
+local callbackCost, collectorDelay = 0, 1
 local function spend(milliseconds)
     callbackCost=callbackCost+milliseconds
     assert(callbackCost<=50,"cockpit blocked the UI past the callback deadline")
@@ -162,6 +162,7 @@ local agents = {{pane=7,command="claude",state="idle"},{pane=remote,command="cla
 local metadata = {
     session_id="exact-local-session",model="recorded-model",request="Exact local request",
     lifecycle={status="working",activity="Running Read",event="PreToolUse",observed_at="2020-01-01T00:00:00.000000Z"},
+    workspace_branch="main",git_status="Clean",workspace_source="Git · live working tree",
 }
 local function encode(value)
     serial=serial+1
@@ -177,7 +178,8 @@ local function clone(value)
     return result
 end
 local function pane(id)
-    for _, item in ipairs(panes) do if item.pane==id then return item end end
+    if id=="@focused" then id=focused end
+    for _, item in ipairs(panes) do if item.pane==id or item.title==id then return item end end
 end
 local function row(id)
     for _, item in ipairs(assert(snapshots[#snapshots]).rows) do
@@ -206,11 +208,19 @@ cx={
     session={
         panes=function() return panes end,pane=function(_,id) return pane(id) end,
         tabs=function() return {{id=1,session=1,color=colors[1]},{id=2,session=2,color=colors[2]}} end,focused=function() return focused end,
-        event=function(_,_,value)
-            if value.act=="cockpit_snapshot" then snapshots[#snapshots+1]=decode(value.value) end
+        event=function(_,id,value)
+            if value.act=="cockpit_snapshot" then snapshots[#snapshots+1]=decode(value.value)
+            elseif value.act=="cockpit_present" then
+                timers[#timers+1]={due=clock+1,callback=function()
+                    if pane(id) then
+                        focused=100
+                        route({url="tern-agent-cockpit://ready/"..value.value.."/"},cx)
+                    end
+                end}
+            elseif value.act=="cockpit_close" then cx.layout:close(pane(id).pane) end
         end,
     },
-    agents={list=function() reads=reads+1 spend(20) return agents end},
+    agents={list=function() spend(20) return agents end},
     hosts={list=function() return {
         {id=1,name="local",kind="local",state="connected",panes={7,100}},
         {id=2,name="remote",kind="remote",state="connected",panes={remote}},
@@ -224,9 +234,16 @@ cx={
         color_tab=function(_,tab,color) colors[tab]=color end,
         close=function(_,id)
             for i,item in ipairs(panes) do if item.pane==id then table.remove(panes,i) break end end
+            if focused==id then focused=7 end
             event("pane_closed",{pane=id})
         end},
-    new_block=function() panes[#panes+1]={pane=100,kind="block",title="Cockpit"} return 100 end,
+    new_block=function(_,_,args)
+        panes[#panes+1]={pane=100,kind="block",tab=1,title="Agent Cockpit · "..args[1]}
+        return 100
+    end,
+    command=function(_,id)
+        if id=="close_pane" then cx.layout:close(focused) end
+    end,
     toast=function() end,
 }
 local fixture={
@@ -255,15 +272,37 @@ local timedDiscovery=setmetatable({collect=function(...)
     spend(30)
     return discovery.collect(...)
 end},{__index=discovery})
-local environment=setmetatable({tern=fixture,require=function(name) return name=="./marks" and marks or timedDiscovery end},{__index=_G})
+local environment=setmetatable({tern=fixture,require=function(name)
+    if name=="./marks" then return marks end
+    if name=="./navigation" then
+        return assert(loadfile(directory.."navigation.luau","t",setmetatable({tern=fixture},{__index=_G})))()
+    end
+    return timedDiscovery
+end},{__index=_G})
 assert(loadfile(directory.."window.luau","t",environment))()
 open=commands.open
 open(cx)
-assert(reads==0 and #snapshots==0,"opening must return with a loading shell before data work")
-advance(500)
+advance(32)
+assert(#snapshots>0 and row(7).title=="Same project" and row(remote).title=="Same project",
+    "connected sessions must be usable in the first frame, without waiting for metadata")
+advance(468)
 assert(row(7).status=="working" and row(7).activity=="Running Read")
 assert(row(7).session_id=="exact-local-session" and row(7).model=="recorded-model")
 assert(row(remote).status=="unknown" and row(remote).session_id==nil,"cross-pane metadata")
+assert(row(7).workspace_branch=="main")
+local beforeRefresh=#snapshots
+metadata.lifecycle={status="working",activity="Running Write",event="PreToolUse",observed_at="2020-01-01T00:00:00.500000Z"}
+advance(2000)
+assert(row(7).activity=="Running Write")
+for index=beforeRefresh+1,#snapshots do
+    for _, item in ipairs(snapshots[index].rows) do
+        if item.key=="pane-7" then
+            assert(item.activity=="Running Read" or item.activity=="Running Write",
+                "refresh exposed an empty intermediate activity")
+            assert(item.workspace_branch=="main","refresh exposed an empty intermediate repository")
+        end
+    end
+end
 metadata.lifecycle={status="waiting_input",activity="Permission required",event="PermissionRequest",observed_at="2020-01-01T00:00:01.000000Z"}
 advance(6000) advance(1)
 assert(row(7).status=="waiting_input")
@@ -334,6 +373,15 @@ advance(600)
 assert(row(7).request~="old owner request","stale async result crossed cockpit ownership")
 advance(4000)
 assert(row(7).request=="new owner request","new owner never receives fresh metadata")
+
+-- Native focus reveals the target itself; raw session fields must not be fed
+-- back into the Lua sessions API (Tern 0.9 exposes mixed session namespaces).
+cx.sessions.switch=function() error("Unknown session from the raw TabInfo namespace") end
+local owner=snapshots[#snapshots].token
+local handled=route({url="tern-agent-cockpit://focus/"..owner.."/pane-"..string.format("%.0f",remote)},cx)
+assert(handled.handled==true,"a private cockpit URL escaped to the external browser")
+advance(32)
+assert(focused==remote and not pane(100),"remote agent selection did not reveal the exact pane")
 ''')
 
 

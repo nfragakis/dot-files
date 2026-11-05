@@ -84,6 +84,8 @@ Three parts, one plugin:
 omarchy plugin add https://github.com/huacnlee/omamail.git --enable
 ```
 
+If the window renders black-on-black after updating Qt, update this plugin and run `omarchy restart shell` to clear cached QML. Its palette bindings explicitly use `Commons.Color` so Qt Quick's own `Color` type cannot shadow the active Omarchy theme.
+
 Then click the envelope in the bar. To open it from the keyboard, add this to
 `~/.config/hypr/bindings.lua`:
 

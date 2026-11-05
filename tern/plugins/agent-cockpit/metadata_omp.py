@@ -8,6 +8,7 @@ one). Failing both, the process's own `--resume <file>` argument names it.
 """
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
@@ -73,6 +74,32 @@ def _capacity(model: str, agent: Path) -> int | None:
             if isinstance(item, dict) and item.get("id") == name and count(item.get("contextWindow")):
                 windows.add(item["contextWindow"])
     return windows.pop() if len(windows) == 1 and min(windows) > 0 else None
+
+
+def _recap(identity: str, agent: Path, last_activity: str) -> dict:
+    """OMP's own idle recap for this session, unless the conversation has moved on since."""
+    try:
+        connection = sqlite3.connect(f"file:{agent / 'history.db'}?mode=ro", uri=True, timeout=0.2)
+        try:
+            row = connection.execute(
+                "SELECT recap, created_at FROM session_recaps WHERE session_id = ? ORDER BY id DESC LIMIT 1",
+                (identity,),
+            ).fetchone()
+        finally:
+            connection.close()
+    except sqlite3.Error:
+        return {}
+    if not row or not isinstance(row[0], str) or type(row[1]) is not int or row[1] <= 0:
+        return {}
+    written = datetime.fromtimestamp(row[1], timezone.utc)
+    try:
+        # Second-granular created_at vs a millisecond message stamp: allow the same second.
+        if last_activity and datetime.fromisoformat(last_activity.replace("Z", "+00:00")).timestamp() > row[1] + 1:
+            return {}
+    except ValueError:
+        pass
+    recap = clean(row[0], limit=400)
+    return {"recap": recap, "recap_at": written.strftime("%Y-%m-%dT%H:%M:%SZ")} if recap else {}
 
 
 def _process_start(pid: int, proc_root: Path) -> float | None:
@@ -345,6 +372,7 @@ def collect(pid: int, proc_root: Path = Path("/proc")) -> dict:
     if crumb and _breadcrumb(pid, proc_root) != crumb:
         return {}
     result.update(session_id=identity, transcript_path=str(path), metadata_source=source + " · recorded metadata")
+    result.update(_recap(identity, _sessions_root(pid, proc_root), result.get("updated_at", "")))
     numbers = accounting.get("usage_stats")
     window = _capacity(result.get("model", ""), _sessions_root(pid, proc_root)) if numbers is not None else None
     if window:

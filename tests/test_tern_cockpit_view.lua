@@ -16,6 +16,8 @@ tern = {
 }
 local selection = dofile("tern/plugins/agent-cockpit/selection.luau")
 package.preload["./selection"] = function() return selection end
+local discovery = dofile("tern/plugins/agent-cockpit/discovery.luau")
+package.preload["./discovery"] = function() return discovery end
 local view = dofile("tern/plugins/agent-cockpit/view.luau")
 package.preload["./view"] = function() return view end
 dofile("tern/plugins/agent-cockpit/host.luau")
@@ -58,7 +60,7 @@ local full = {
 	key = "pane-1", provider = "claude", title = "Cockpit details", status = "idle", done_unseen = true,
 	flagged = true, stale = false, tab_color = "red", phase_ms = 8040000, session = "commercialize", host = "fw-desktop",
 	host_key = "1", session_key = "1", model = "claude-opus-5-5", cwd = "/repo", activity = "Ready",
-	request = "Fix the pane", last_response = "Done", source = "Claude lifecycle hook · Stop",
+	request = "Fix the pane", last_response = "Done", recap = "PRs are ready for review.", recap_at = "2026-10-15T12:00:00Z", source = "Claude lifecycle hook · Stop",
 	usage_stats = { input = 10, output = 22839, cache_read = 4457171, cache_write = 135532, context = 158752, cost = 3.41, agents = 2 },
 	workspace_branch = "main", git_status = "Dirty · 3 tracked · 1 untracked",
 	git_divergence = "↑2 ↓0 · origin/main (local tracking ref)", pr_status = "#41 · Open · review required",
@@ -73,13 +75,10 @@ local codex = {
 }
 local bare = { key = "pane-3", provider = "omp", status = "unknown" }
 
--- Before discovery, show the real shell and loading text without inventing an agent.
+-- A hidden carrier must never paint the native PiP/loading transition.
 local state = selection.new("owner")
-local loading = picker(state)
-assert(contains(loading, "Loading agent sessions…"), "loading is visible before any snapshot")
-assert(#loading.p.items == 0 and loading.p.selected == tern.json.null, "loading has no fake selection")
-assert(contains(loading, "Close"), "the loading shell offers Close")
-assert(not contains(loading, "No detected agent sessions."), "loading is not an empty discovery")
+assert(not find(block.view(state, cx), function(value) return value.p and value.p.role == "cockpit.picker" end),
+    "an unplaced carrier exposed UI")
 assert(block.key(state, { name = "enter" }, cx))
 action(state, "focus")
 assert(#opened == 0, "Enter and Open session have no destination while loading")
@@ -89,13 +88,12 @@ action(state, "close")
 assert(#opened == 2 and opened[2] == "tern-agent-cockpit://return/owner/", "Close dismisses while loading")
 
 snapshot(state, "stale-before-discovery", { full }, "old-owner")
-assert(not state.loaded and #picker(state).p.items == 0, "a stale owner cannot replace loading")
+assert(not state.loaded, "a foreign owner cannot populate the modal")
+state.prepared = true
 snapshot(state, "discovered", { bare, codex })
 local populated = picker(state)
 assert(state.loaded and #populated.p.items == 2, "the first discovery populates the picker")
-assert(populated.p.role == loading.p.role and populated.p.key == loading.p.key, "discovery keeps the same picker shell")
 assert(populated.p.selected == "omp:pane-3")
-assert(not contains(populated, "Loading agent sessions…"), "discovery replaces the loading presentation")
 
 -- Enrichment changes content without resetting the user's selected identity.
 block.event(state, { ev = "select", id = view.LIST_ID, item = "codex:pane-2" }, cx)
@@ -116,11 +114,10 @@ assert(opened[#opened] == "tern-agent-cockpit://focus/owner/pane-2", "Enter open
 
 -- An observed empty result is distinct from loading, but remains dismissible.
 local empty = selection.new("owner")
+empty.prepared = true
 snapshot(empty, "empty-discovery", {})
 local empty_picker = picker(empty)
 assert(empty.loaded and #empty_picker.p.items == 0)
-assert(contains(empty_picker, "No detected agent sessions.") and contains(empty_picker, "No agent selected"))
-assert(not contains(empty_picker, "Loading agent sessions…"))
 local before_empty = #opened
 block.key(empty, { name = "enter" }, cx)
 action(empty, "focus")
@@ -128,12 +125,33 @@ assert(#opened == before_empty, "empty discovery has no destination")
 action(empty, "close")
 assert(opened[#opened] == "tern-agent-cockpit://return/owner/", "empty discovery can close")
 
--- Ownership handoff clears old observations and restores loading until new discovery.
+-- Ownership handoff hides old observations until the new discovery is ready.
 block.event(state, { ev = "action", act = "cockpit_claim", value = "replacement-owner" }, cx)
-assert(contains(picker(state), "Loading agent sessions…") and #picker(state).p.items == 0)
+assert(not find(block.view(state, cx), function(value) return value.p and value.p.role == "cockpit.picker" end))
 snapshot(state, "late-old-owner", { full })
-assert(not state.loaded and #picker(state).p.items == 0)
+assert(not state.loaded, "a late old-owner snapshot cannot expose the old modal")
 snapshot(state, "replacement-discovery", { full }, "replacement-owner")
 assert(#picker(state).p.items == 1 and picker(state).p.selected == "claude:pane-1")
 assert(contains(picker(state), "Cockpit details") and contains(picker(state), "Fix the pane"), "new owner receives genuine agent details")
+
+-- Closing while the native helper is running rejects its late result and effects.
+local completion, exits, renders, toasts = nil, 0, 0, 0
+tern.plugin = { dir = "/fixture" }
+tern.process = { run = function()
+    return { next = function(_, callback) completion = callback end }
+end }
+cx.pane = 123
+cx.exit = function() exits = exits + 1 end
+cx.render = function() renders = renders + 1 end
+cx.toast = function() toasts = toasts + 1 end
+local pending = selection.new("pending-owner")
+block.event(pending, { ev = "action", act = "cockpit_present", value = "pending-owner" }, cx)
+assert(completion and pending.preparing)
+block.event(pending, { ev = "action", act = "cockpit_close", value = "pending-owner" }, cx)
+local before_late = #opened
+snapshots.placement = { pane = "123", window = "" }
+completion({status = 0, stdout = "placement"})
+assert(exits == 1 and renders == 0 and toasts == 0 and #opened == before_late)
+assert(not pending.prepared and next(block.view(pending, cx)) == nil,
+    "a closed cockpit became visible again")
 print("cockpit view transitions: ok")

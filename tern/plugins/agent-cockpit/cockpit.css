@@ -1,6 +1,5 @@
 /* Native picker geometry: 54px agent rows and 32px nonselectable group headers. */
-/* The transient host is a viewport-sized transparent modal carrier from its first frame.
-   Native PiP coordinates and entrance transforms must never move the cockpit. */
+/* The native carrier stays transparent; its host-owned picker is the only UI. */
 .tn-pane.pip[aria-label^='Agent Cockpit · '] {
     position: absolute !important;
     inset: 0 !important;
@@ -17,6 +16,10 @@
     border-width: 0 !important;
     border-radius: 0 !important;
     box-shadow: none !important;
+}
+/* The non-revealed staging tab is transport, never a tab-bar item (including exit motion). */
+.tt[title^='Agent Cockpit · '] {
+    display: none !important;
 }
 .tn-pane.pip[aria-label^='Agent Cockpit · '] > .tn-head {
     display: none !important;
@@ -38,6 +41,8 @@
     align-items: center !important;
     justify-content: center !important;
     padding: 0 !important;
+    /* Native placement animates above the CSS cascade. Reveal after it settles. */
+    animation: agent-cockpit-reveal 1ms 450ms linear both;
 }
 [data-surface='plugin.agent-cockpit.cockpit'] .pk-sheet {
     width: min(1120px, calc(100% - 48px)) !important;
@@ -54,6 +59,10 @@
     [data-surface='plugin.agent-cockpit.cockpit'] .pk-sheet {
         animation: none;
     }
+}
+@keyframes agent-cockpit-reveal {
+    from { opacity: 0; }
+    to { opacity: 1; }
 }
 @keyframes agent-cockpit-soft-focus {
     from { opacity: 0; transform: scale(0.978); }

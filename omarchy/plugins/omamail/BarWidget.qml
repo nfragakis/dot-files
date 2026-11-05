@@ -1,6 +1,7 @@
 import QtQuick
 import Quickshell
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 import "components"
 import "bar"
@@ -19,7 +20,7 @@ BarWidget {
   // `barForeground` belongs to qs.Ui.Panel, not to BarWidget: reading it here
   // yields undefined, and assigning undefined to a colour leaves the icon
   // unpainted. The bar itself is the source.
-  readonly property color foreground: bar ? bar.barForeground : Color.foreground
+  readonly property color foreground: bar ? bar.barForeground : Commons.Color.foreground
   property bool previewOpen: false
   property bool popoutSwitchClosing: false
 
@@ -113,7 +114,7 @@ BarWidget {
           anchors.centerIn: parent
           iconSize: Style.space(12)
           color: button.glyphColor
-          markColor: Color.accent
+          markColor: Commons.Color.accent
           // The dot is simply whether unread mail is waiting. It used to mean
           // "something arrived since you last looked", which was a different
           // question from the one anyone asks of a mail icon, and it could not
@@ -149,7 +150,7 @@ BarWidget {
     id: openIndicator
     readonly property bool vertical: !!root.bar && root.bar.vertical
     visible: button.windowOpen
-    color: Color.accent
+    color: Commons.Color.accent
     radius: Math.min(width, height) / 2
     width: vertical ? Style.space(2) : Style.space(10)
     height: vertical ? Style.space(10) : Style.space(2)
@@ -176,11 +177,11 @@ BarWidget {
       width: parent ? parent.width : 0
       messages: root.gmail ? root.gmail.barMessages : []
       events: root.gmail ? root.gmail.barEvents : []
-      textColor: Color.popups.text
-      backgroundColor: Color.popups.background
-      accentColor: Color.accent
-      dimColor: Qt.rgba(Color.popups.text.r, Color.popups.text.g,
-        Color.popups.text.b, 0.62)
+      textColor: Commons.Color.popups.text
+      backgroundColor: Commons.Color.popups.background
+      accentColor: Commons.Color.accent
+      dimColor: Qt.rgba(Commons.Color.popups.text.r, Commons.Color.popups.text.g,
+        Commons.Color.popups.text.b, 0.62)
       panelFontFamily: Style.font.family
       contentDirection: root.gmail ? root.gmail.contentDirection : ""
       onMessageRequested: function(accountId, messageId) {

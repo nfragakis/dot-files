@@ -1,6 +1,6 @@
 import QtQuick
 import QtTest
-import qs.Commons
+import qs.Commons as Commons
 import "../.." as Omamail
 import "../../account/Accounts.js" as Accounts
 
@@ -94,11 +94,27 @@ Item {
       compare(host.opens, 2)
     }
 
+    function test_mail_text_remains_readable_with_QtQuick_imported() {
+      function channel(value) {
+        return value <= 0.04045 ? value / 12.92
+          : Math.pow((value + 0.055) / 1.055, 2.4)
+      }
+      function luminance(color) {
+        return 0.2126 * channel(color.r) + 0.7152 * channel(color.g)
+          + 0.0722 * channel(color.b)
+      }
+      var foreground = luminance(app.foreground)
+      var background = luminance(app.background)
+      var contrast = (Math.max(foreground, background) + 0.05)
+        / (Math.min(foreground, background) + 0.05)
+      verify(contrast >= 4.5, "Theme text must not render black on black")
+    }
+
     function test_new_notifications_follow_bar_colors() {
       var account = service.findAccount(second)
       var firstNotice = notification(account, [{ id: "one" }])
       compare(firstNotice.command[2], String(host.bar.barForeground))
-      compare(firstNotice.command[3], String(Color.accent))
+      compare(firstNotice.command[3], String(Commons.Color.accent))
       host.bar.barForeground = Qt.rgba(0.1, 0.2, 0.3, 1)
       var nextNotice = notification(account, [{ id: "two" }])
       compare(nextNotice.command[2], String(host.bar.barForeground))

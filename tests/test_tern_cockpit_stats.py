@@ -16,6 +16,7 @@ from unittest.mock import patch
 
 import metadata
 import metadata_codex as codex
+import metadata_omp as omp
 import metadata_usage as usage
 
 
@@ -62,6 +63,28 @@ class UsageStatsTest(unittest.TestCase):
         self.assertEqual(numbers["input"], 200)
         self.assertEqual(numbers["cache_read"], 800)
         self.assertEqual((numbers["context"], numbers["capacity"]), (400, 2000))
+
+
+class OmpRecapTest(unittest.TestCase):
+    def test_latest_recap_shown_only_until_the_conversation_moves_on(self) -> None:
+        import sqlite3
+        with tempfile.TemporaryDirectory() as temp:
+            agent = Path(temp)
+            self.assertEqual(omp._recap("s1", agent, ""), {}, "no history database")
+            db = sqlite3.connect(agent / "history.db")
+            db.execute("CREATE TABLE session_recaps (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL, "
+                       "cwd TEXT NOT NULL, recap TEXT NOT NULL, created_at INTEGER NOT NULL)")
+            db.executemany("INSERT INTO session_recaps (session_id, cwd, recap, created_at) VALUES (?, '/w', ?, ?)", [
+                ("s1", "Old recap", 1792000000), ("s1", "PRs ready; next: mark ready.", 1792090000),
+                ("other", "Someone else's recap", 1792099999),
+            ])
+            db.commit()
+            db.close()
+            self.assertEqual(omp._recap("s1", agent, "2026-10-15T18:00:00.000Z"),
+                             {"recap": "PRs ready; next: mark ready.", "recap_at": "2026-10-15T18:46:40Z"})
+            self.assertEqual(omp._recap("s1", agent, "2026-10-15T19:00:00.000Z"), {},
+                             "a newer message makes the recap stale")
+            self.assertEqual(omp._recap("missing", agent, ""), {})
 
 
 @unittest.skipUnless(shutil.which("lua"), "Lua is required for the pure cockpit models")

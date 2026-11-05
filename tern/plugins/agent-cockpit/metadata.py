@@ -34,6 +34,7 @@ _FIELDS = {
     "subagents": 300, "usage_source": 300,
     "workspace_branch": 300, "git_status": 300, "git_divergence": 300,
     "pr_status": 300, "pr_url": 1000, "ci_status": 300, "workspace_source": 300,
+    "recap": 400, "recap_at": 100,
 }
 _LIFECYCLE_EVENTS = {
     "SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse",

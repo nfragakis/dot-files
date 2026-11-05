@@ -180,6 +180,16 @@ Item {
 
   // ------------------------------------------------------------- providers
 
+  property int usageWindowDays: Math.max(1, Math.min(7, Number(setting("usageWindowDays", 7)) || 7))
+  property double visibilityNowMs: Date.now()
+
+  Timer {
+    interval: 60000
+    running: true
+    repeat: true
+    onTriggered: root.visibilityNowMs = Date.now()
+  }
+
   // An agent earns a place in the bar and the panel by being switched on in
   // settings and having actually produced numbers — locally or on a synced
   // device. With nothing to show, the whole module collapses out of the bar
@@ -216,13 +226,46 @@ Item {
     return settings.providers[id].enabled !== false
   }
 
-  // All-time keeps a quiet day from hiding an agent; today's counts admit a
-  // machine whose only source is history.jsonl, which knows nothing older.
+  // Lifetime history, credentials, empty limits, and balances are not activity.
+  // Quota usage counts only when its entire unexpired window fits the period.
   function providerHasData(p) {
-    return numberValue(p.totalPrompts) > 0 || numberValue(p.totalSessions) > 0
-      || numberValue(p.activeDays) > 0 || numberValue(p.todayPrompts) > 0
-      || numberValue(p.todaySessions) > 0 || (p.limits && p.limits.length > 0)
-      || !!p.balance
+    var now = new Date(visibilityNowMs)
+    var start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - usageWindowDays + 1)
+    var firstDate = Qt.formatDate(start, "yyyy-MM-dd")
+    var today = Qt.formatDate(now, "yyyy-MM-dd")
+    var days = p.recentDays || []
+    for (var i = 0; i < days.length; i++) {
+      if (days[i].date >= firstDate && days[i].date <= today && numberValue(days[i].messageCount) > 0)
+        return true
+    }
+    var activeDates = p.activeDates || []
+    for (var d = 0; d < activeDates.length; d++) {
+      if (activeDates[d] >= firstDate && activeDates[d] <= today) return true
+    }
+    var updated = new Date(p.updatedAt || "")
+    if (Qt.formatDate(updated, "yyyy-MM-dd") === today
+        && (numberValue(p.todayPrompts) > 0 || numberValue(p.todaySessions) > 0
+          || numberValue(p.todayTotalTokens) > 0)) return true
+
+    var limits = p.limits || []
+    for (var l = 0; l < limits.length; l++) {
+      var limit = limits[l]
+      if (!(Number(limit.percent) > 0)) continue
+      var label = String(limit.label || "").toLowerCase()
+      var span = 0
+      if (/week|7-day|seven/.test(label)) span = 7 * 86400000
+      else if (/daily|1-day/.test(label)) span = 86400000
+      else {
+        var hours = label.match(/(\d+)\s*-?\s*h(?:our)?\b/)
+        var minutes = label.match(/(\d+)\s*-?\s*m(?:in(?:ute)?s?)?\b/)
+        if (hours) span = Number(hours[1]) * 3600000
+        else if (minutes) span = Number(minutes[1]) * 60000
+      }
+      var reset = Date.parse(limit.resetsAt || "")
+      if (span > 0 && reset > visibilityNowMs && reset - span <= visibilityNowMs
+          && reset - span >= start.getTime()) return true
+    }
+    return false
   }
 
   // A prepaid agent's credit ledger. Like rate limits, the balance is
@@ -249,6 +292,7 @@ Item {
     return {
       providerId: String(record.id),
       providerName: String(record.name || record.id),
+      updatedAt: synced ? "" : String(record.updatedAt || ""),
       ready: record.ready === true || synced,
       usageStatusText: String(record.usageStatusText || ""),
       authHelpText: String(record.authHelpText || ""),
@@ -267,6 +311,7 @@ Item {
       totalPrompts: synced ? numberValue(stats.totalPrompts) : numberValue(record.totalPrompts),
       totalSessions: synced ? numberValue(stats.totalSessions) : numberValue(record.totalSessions),
       activeDays: synced ? numberValue(stats.activeDays) : numberValue(record.activeDays),
+      activeDates: synced ? (stats.activeDates || []) : (record.activeDates || []),
       modelUsage: synced ? (stats.modelUsage || ({})) : (record.modelUsage || ({})),
       hasLocalStats: synced ? (stats.hasLocalStats !== false) : (record.hasLocalStats !== false),
       hasPromptStats: synced ? (stats.hasPromptStats !== false) : (record.hasPromptStats !== false),
@@ -605,6 +650,10 @@ Item {
         // carry a count; the widest one stands in for them.
         var activeDates = Array.isArray(stats.activeDates) ? stats.activeDates : []
         for (var ad = 0; ad < activeDates.length; ad++) acc.activeDates[String(activeDates[ad])] = true
+        var activityDate = Qt.formatDate(new Date(stats.updatedAt || snapshot.updatedAt || ""), "yyyy-MM-dd")
+        if (activityDate !== "" && (numberValue(stats.todayPrompts) > 0
+            || numberValue(stats.todaySessions) > 0 || numberValue(stats.todayTotalTokens) > 0))
+          acc.activeDates[activityDate] = true
         acc.activeDays = Math.max(acc.activeDays, numberValue(stats.activeDays))
         combineObjectNumbers(additive, acc.todayTokensByModel, stats.todayTokensByModel || {})
 
@@ -645,6 +694,7 @@ Item {
         totalPrompts: acc.totalPrompts,
         totalSessions: acc.totalSessions,
         activeDays: Math.max(acc.activeDays, Object.keys(acc.activeDates).length),
+        activeDates: Object.keys(acc.activeDates).sort(),
         modelUsage: acc.modelUsage,
         deviceCount: providerDevices.length,
         devices: providerDevices
@@ -667,6 +717,7 @@ Item {
     return {
       providerId: String(record.id),
       providerName: String(record.name || record.id),
+      updatedAt: String(record.updatedAt || ""),
       ready: record.ready === true,
       hasLocalStats: record.hasLocalStats !== false,
       hasPromptStats: record.hasPromptStats !== false,

@@ -57,5 +57,38 @@ class TernClipboardInstallerTest(unittest.TestCase):
         self.assertFalse(self.state.exists())
 
 
+    def test_client_stages_resolvable_entry_and_preserves_upstream_and_bindings(self) -> None:
+        bindings = self.config / "hypr/bindings.lua"
+        bindings.parent.mkdir(parents=True)
+        bindings.write_text('o.bind("SUPER + X", "Personal", "personal")\n')
+        forge = self.home / "src/forge/omarchy"
+        (forge / "hypr").mkdir(parents=True)
+        (forge / "lib").mkdir()
+        (forge / "bin").mkdir()
+        (forge / "hypr/tern-nav.lua").write_text("-- upstream compositor bindings\n")
+        (forge / "plugin.toml").write_text('id = "omarchy"\nwindow = "window.luau"\n')
+        (forge / "LICENSE").write_text("upstream license\n")
+        upstream_entry = forge / "window.luau"
+        upstream_entry.write_text("-- upstream entry must stay untouched\n")
+        binaries = self.home / "bin"
+        binaries.mkdir()
+        tern = binaries / "tern"
+        tern.write_text('#!/bin/sh\nif [ "$1" = plugin ] && [ "$2" = dir ]; then printf "%s/tern/plugins\\n" "$XDG_CONFIG_HOME"; fi\n')
+        tern.chmod(0o755)
+        self.environment["PATH"] = str(binaries) + os.pathsep + self.environment.get("PATH", "")
+
+        result = self.install("--client")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        packages = [path for path in (self.state / "dot-files/tern-omarchy").iterdir() if (path / "plugin.toml").is_file()]
+        self.assertEqual(len(packages), 1)
+        package = packages[0]
+        entry_context = (package / "window.luau").resolve().parent
+        self.assertTrue((entry_context / "lib").is_dir(), "canonical entry context cannot resolve its relative imports")
+        self.assertEqual(upstream_entry.read_text(), "-- upstream entry must stay untouched\n")
+        self.assertIn('"Personal"', bindings.read_text())
+        self.assertEqual(bindings.read_text().count('require("hypr.tern-omarchy")'), 1)
+        self.assertEqual(self.install("--client").returncode, 0)
+        self.assertEqual(bindings.read_text().count('require("hypr.tern-omarchy")'), 1)
+
 if __name__ == "__main__":
     unittest.main()

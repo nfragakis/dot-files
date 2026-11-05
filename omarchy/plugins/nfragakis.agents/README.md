@@ -3,7 +3,7 @@
 One bar icon and one panel for every AI coding subscription on the machine.
 The panel is strictly a display: it watches the usage records that
 `update-usage.sh` writes to `~/.local/state/omarchy/agents/usage/`
-and draws whatever appears there. `Panel.qml` owns the bar button and the
+and displays only providers with activity in the configured period. `Panel.qml` owns the bar button and the
 popup; `Main.qml` discovers and watches the records (and handles the optional
 cross-device aggregation); `Agent.qml` is the per-record file watcher.
 
@@ -25,11 +25,25 @@ cross-device aggregation); `Agent.qml` is the per-record file watcher.
   the same way the weekly chart scales to its busiest day. Hover for the
   input / output / cache split.
 
-A subscription appears only when it is enabled in settings and has actually
-recorded usage — on this machine or on a synced one. With one such agent
-there is no switch row at all; with none, the module leaves the bar entirely
-rather than sitting there with nothing to say. A CLI installed mid-session
-shows up at the next refresh, so nothing polls the disk waiting for it.
+A subscription appears only when it is enabled in settings and has activity
+in the last `usageWindowDays` local calendar days (1–7, including today;
+default 7), on this machine or a synced one. Activity means dated tokens,
+prompts, or sessions. A positive quota meter also counts when its entire
+unexpired window falls inside the period; a plan, login, balance, zero meter,
+or lifetime history alone does not. Unknown or longer quota windows cannot
+prove activity in the period and are ignored.
+
+Visibility is rechecked every minute, including while the panel is closed.
+With one active agent there is no switch row; with none, the module leaves
+the bar entirely. Collection continues for hidden-but-enabled providers, so
+they reappear automatically after usage is recorded and refreshed. The
+displayed daily chart still covers seven days; model totals remain all-time.
+
+This checkout's bar configuration explicitly disables Antigravity (`agy`),
+Grok (`grok`), MiniMax (`minimax`), OpenCode (`opencode`), and Z.ai (`zai`).
+OpenCode Go (`opencode-go`) and SuperGrok (`xai-oauth`) are separate providers
+and remain eligible, but follow the same activity rule. The unused
+`nfragakis.zai` background service is also disabled in the bar configuration.
 
 That self-hiding is why the widget ships in the default bar layout: a machine
 that has never run an AI coding agent draws nothing, and the icon arrives on
@@ -118,11 +132,12 @@ only adds the meter and the spent-of-funded line under the real figure.
 
 Settings live in the widget's entry in `~/.config/omarchy/shell.json`. The
 top-level keys can be set with
-`omarchy bar set omarchy.agents <key> <value>`:
+`omarchy bar set nfragakis.agents <key> <value>`:
 
 | Key | Default | What it does |
 |---|---|---|
 | `refreshIntervalSec` | `900` | How often the usage records regenerate |
+| `usageWindowDays` | `7` | Show only providers active in the last 1–7 calendar days, including today |
 | `syncMode` | `"Off"` | `"On"` writes this machine's snapshot and merges the others |
 | `syncDir` | `""` | A folder synced by Syncthing, Dropbox, rsync, … |
 | `syncFileName` | `<hostname>.json` | This machine's snapshot file |
@@ -131,8 +146,9 @@ top-level keys can be set with
 Numbers need `--json`, or they land in `shell.json` as strings:
 
 ```bash
-omarchy bar set omarchy.agents refreshIntervalSec 300 --json
-omarchy bar set omarchy.agents syncDir '~/Sync/agent-usage'
+omarchy bar set nfragakis.agents usageWindowDays 1 --json
+omarchy bar set nfragakis.agents refreshIntervalSec 300 --json
+omarchy bar set nfragakis.agents syncDir '~/Sync/agent-usage'
 ```
 
 Per-agent enablement is nested, and `set` writes its key literally rather
@@ -140,7 +156,7 @@ than walking a dotted path — so pass the whole `providers` object as JSON (or
 edit `shell.json` directly):
 
 ```bash
-omarchy bar set omarchy.agents providers '{
+omarchy bar set nfragakis.agents providers '{
   "claude": { "enabled": true },
   "codex": { "enabled": false },
   "fireworks": { "enabled": true }

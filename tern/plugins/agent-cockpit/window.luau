@@ -2,10 +2,12 @@
 -- Window authority stays here; a transient host block supplies the native picker.
 local discovery = require("./discovery")
 local marks = require("./marks")
+local navigation = require("./navigation")
 local BLOCK = "agent-cockpit.cockpit"
 local SCHEME = "tern-agent-cockpit://"
 local token = tostring(os.time()) .. "-" .. tostring(tern.now()):gsub("[^%w]", "") .. "-" .. tostring(math.random(1, 2147483647))
-local cockpit, selected, previous, previousSession
+local debugFocus = {}
+local cockpit, cockpitSpec, selected, previous
 local targets, lastResults = {}, {}
 local lastSnapshot = ""
 local revision, acknowledged = 0, -1
@@ -13,7 +15,7 @@ local wireSnapshot = ""
 local pending, refreshJob, refreshAgain
 local STEP_MS = 16
 local refresh
-local modalReady = false
+local modalReady, focusing = false, false
 local dismiss
 -- Per host id: one collector run in flight, its next due time and round-robin position.
 local metadataCache, metadataBusy = {}, {}
@@ -29,13 +31,13 @@ local workspaceFields = {
 
 
 local function send(cx, action, value)
-    if cockpit and cx.session:pane(cockpit) then
-        cx.session:event(cockpit, { ev = "action", id = "layer.agents", act = action, value = value })
+    if cockpitSpec and cx.session:pane(cockpitSpec) then
+        cx.session:event(cockpitSpec, { ev = "action", id = "layer.agents", act = action, value = value })
     end
 end
 
 local function queue_refresh()
-    if pending or not cockpit then return end
+    if pending or not cockpit or focusing then return end
     local ticket, owner, pane = {}, token, cockpit
     pending = ticket
     tern.timer(STEP_MS, function(cx)
@@ -171,10 +173,10 @@ local function enrich(row, live)
     if not cached then return end
     for _, field in ipairs({
         "session_id", "request", "last_response", "git_branch", "updated_at", "usage", "metadata_source",
-        "session_tokens", "session_cost", "context_usage", "subagents", "usage_source",
+        "session_tokens", "session_cost", "context_usage", "subagents", "usage_source", "recap", "recap_at",
     }) do
         if not row[field] then
-            local value = discovery.clean(cached[field], 300)
+            local value = discovery.clean(cached[field], field == "recap" and 400 or 300)
             if value ~= "" then row[field] = value end
         end
     end
@@ -238,7 +240,7 @@ end
 local function track(cx, rows)
     local now, focusedTab = os.time(), nil
     local focused = cx.session:focused()
-    local focusedPane = focused and cx.session:pane(focused)
+    local focusedPane = focused ~= cockpit and cx.session:pane("@focused")
     if focusedPane then focusedTab = focusedPane.tab end
     local seen, byTab = {}, {}
     for _, row in ipairs(rows) do
@@ -345,10 +347,10 @@ local function defer(job, work)
             return
         end
         if cockpit then
-            local pane = cx.session:pane(cockpit)
+            local pane = cx.session:pane(cockpitSpec)
             if not pane or pane.exited ~= nil then
                 refreshJob = nil
-                if pane then dismiss(cx, true) end
+                if pane then dismiss(cx) end
                 return
             end
         end
@@ -392,107 +394,109 @@ local function enrich_next(job, index)
 end
 
 refresh = function(cx)
+    if focusing then return end
     if refreshJob then refreshAgain = true return end
     if cockpit then
-        local pane = cx.session:pane(cockpit)
-        -- Creation can precede visibility in the window snapshot; pane_created
-        -- will schedule the first observation without doing work in that event.
+        local pane = cx.session:pane(cockpitSpec)
         if not pane then return end
-        if pane.exited ~= nil then dismiss(cx, true) return end
+        if pane.exited ~= nil then dismiss(cx) return end
         send(cx, "cockpit_ping", token)
     end
-    local job = { owner = token, pane = cockpit, selected = selected, generation = metadataGeneration }
-    refreshJob, refreshAgain = job, false
-    defer(job, function(current)
-        job.agents = current.agents:list()
-        for _, agent in ipairs(job.agents) do
-            if agent.state == "working" then lastResults[agent.pane] = nil end
-        end
-        defer(job, function(current)
-            job.panes, job.hosts = current.session:panes(), current.hosts:list()
-            job.sessions, job.tabs = current.sessions:list(), current.session:tabs()
-            job.live = liveness(job.panes, job.hosts)
-            defer(job, function(current)
-                job.rows, job.targets = discovery.collect(job.panes, job.agents, job.hosts,
-                    job.sessions, job.tabs, lastResults)
-                defer(job, function(current)
-                    for _, row in ipairs(job.rows) do
-                        apply_lifecycle(row, job.live[job.targets[row.key].pane])
-                    end
-                    if not job.pane then finish_refresh(current, job) return end
-                    targets = job.targets
-                    for key in pairs(metadataCache) do
-                        if not targets[key] then metadataCache[key] = nil end
-                    end
-                    for key in pairs(workspaceCache) do
-                        if not targets[key] or not job.live[targets[key].pane] then workspaceCache[key] = nil end
-                    end
-                    for pane in pairs(lastResults) do
-                        if job.live[pane] == nil then lastResults[pane] = nil end
-                    end
-                    local where = placement(current)
-                    for _, row in ipairs(job.rows) do
-                        local place = where[targets[row.key].pane]
-                        row.collector_note = place and hostNotes[place.host.id] or nil
-                        enrich(row, job.live[targets[row.key].pane])
-                    end
-                    -- Discoveries appear without waiting for transcripts or ssh.
-                    -- Later refreshes retain the enriched view until replacement.
-                    if lastSnapshot == "" then publish(current, job.rows) end
-                    enrich_next(job, 1)
-                end)
-            end)
-        end)
-    end)
+    -- Inventory is a bounded window read. Publish it in this callback instead
+    -- of waiting for a chain of animation-frame timers before showing rows.
+    local agents = cx.agents:list()
+    local panes, hosts = cx.session:panes(), cx.hosts:list()
+    local sessions, tabs = cx.sessions:list(), cx.session:tabs()
+    local live = liveness(panes, hosts)
+    for _, agent in ipairs(agents) do
+        if agent.state == "working" then lastResults[agent.pane] = nil end
+    end
+    local rows, rowTargets = discovery.collect(panes, agents, hosts, sessions, tabs, lastResults)
+    for _, row in ipairs(rows) do
+        apply_lifecycle(row, live[rowTargets[row.key].pane])
+        enrich(row, live[rowTargets[row.key].pane])
+    end
+    if not cockpit then
+        track(cx, rows)
+        probe_lifecycle(cx, rows, rowTargets)
+        return
+    end
+    local job = {
+        owner = token, pane = cockpit, selected = selected, generation = metadataGeneration,
+        rows = rows, targets = rowTargets, live = live,
+    }
+    refreshJob, refreshAgain, targets = job, false, rowTargets
+    for key in pairs(metadataCache) do
+        if not targets[key] then metadataCache[key] = nil end
+    end
+    for key in pairs(workspaceCache) do
+        if not targets[key] or not live[targets[key].pane] then workspaceCache[key] = nil end
+    end
+    for pane in pairs(lastResults) do
+        if live[pane] == nil then lastResults[pane] = nil end
+    end
+    local where = placement(cx)
+    for _, row in ipairs(rows) do
+        local place = where[targets[row.key].pane]
+        row.collector_note = place and hostNotes[place.host.id] or nil
+    end
+    track(cx, rows)
+    if lastSnapshot == "" then publish(cx, rows) end
+    enrich_next(job, 1)
 end
 
 local function claim(cx, pane)
-    cockpit, selected, lastSnapshot, acknowledged = pane, "pane-" .. string.format("%.0f", previous), "", -1
-    -- Retain exact-pane caches across opens, but cancel every previous UI job.
+    cockpit, cockpitSpec = pane, "Agent Cockpit · " .. token
+    selected, lastSnapshot, acknowledged = "pane-" .. string.format("%.0f", previous), "", -1
     pending, refreshJob, refreshAgain = nil, nil, false
     metadataDue, workspaceDue = {}, 0
     metadataGeneration = metadataGeneration + 1
-    send(cx, "cockpit_claim", token)
-    queue_refresh()
+    focusing = true
+    local owner, started = token, tern.now()
+    local function prepare(current)
+        if not current or cockpit ~= pane or token ~= owner then return end
+        if current.session:focused() ~= previous and current.session:focused() ~= pane then dismiss(current) return end
+        if not current.session:pane(cockpitSpec) then
+            if tern.now() - started > 2000 then
+                current:toast("error", "Agent Cockpit did not start")
+                dismiss(current)
+            else
+                tern.timer(STEP_MS, prepare)
+            end
+            return
+        end
+        send(current, "cockpit_claim", token)
+        send(current, "cockpit_present", token)
+    end
+    tern.timer(0, prepare)
 end
 
-dismiss = function(cx, restore)
-    local pane = cockpit
-    cockpit, selected, targets = nil, nil, {}
-    modalReady = false
-    pending, refreshJob, refreshAgain = nil, nil, false
-    if pane and cx.session:pane(pane) then cx.layout:close(pane) end
-    if restore and previous and cx.session:pane(previous) then
-        if previousSession then cx.sessions:switch(previousSession) end
-        cx.layout:focus(previous)
+dismiss = function(cx)
+    if cockpit then
+        -- Let the host stop its pending presentation before removing the carrier.
+        send(cx, "cockpit_close", token)
     end
+    cockpit, cockpitSpec, selected, targets = nil, nil, nil, {}
+    modalReady, focusing = false, false
+    pending, refreshJob, refreshAgain = nil, nil, false
 end
 
 local function open(cx)
     local focused = cx.session:focused()
-    if cockpit and focused == cockpit then dismiss(cx, true) return end
-    if cockpit then dismiss(cx, false) end
+    if cockpit then dismiss(cx) return end
     if not focused then
         cx:toast("info", "Open a pane before opening Agent Cockpit")
         return
     end
     previous = focused
-    local session = cx.sessions:current()
-    previousSession = session and session.id
     token = tostring(os.time()) .. "-" .. tostring(tern.now()):gsub("[^%w]", "") .. "-" .. tostring(math.random(1, 2147483647))
-    local pane = cx:new_block(BLOCK, { token, "pane-" .. string.format("%.0f", previous) }, "beside")
+    -- Build out of the visible layout. Its own daemon floats and focuses the
+    -- exact host id before exposing UI; no temporary split or corner lift.
+    local pane = cx:new_block(BLOCK, { token, "pane-" .. string.format("%.0f", previous) }, "tab", { focus = false })
     if not pane then
         cx:toast("error", "Agent Cockpit is not installed on this host", "Run install-tern-cockpit.py on the host owning this pane.")
         return
     end
-    -- Float in the same UI transaction as creation: never paint a temporary split.
-    local ok, err = cx.layout:float(pane, previous)
-    if not ok then
-        cx.layout:close(pane)
-        cx:toast("error", "Could not open Agent Cockpit overlay", err)
-        return
-    end
-    cx.layout:focus(pane)
     claim(cx, pane)
 end
 
@@ -501,12 +505,13 @@ tern.command({
     run = open,
 })
 
-tern.route.link(function(link, cx)
-    if link.url:sub(1, #SCHEME) ~= SCHEME then return nil end
-    local verb, owner, key = link.url:sub(#SCHEME + 1):match("^([^/]+)/([^/]+)/?(.*)$")
-    -- Consume our private protocol in every window; only its owner acts on it.
-    if owner ~= token then return { handled = true } end
-    if verb == "ack" then
+local function handle_route(verb, key, cx)
+    if verb == "ready" then
+        focusing = false
+        refresh(cx)
+    elseif verb == "failed" then
+        dismiss(cx)
+    elseif verb == "ack" then
         if tonumber(key) == revision then acknowledged, modalReady = revision, true end
     elseif verb == "select" then
         if targets[key] then
@@ -518,23 +523,54 @@ tern.route.link(function(link, cx)
         lastSnapshot = ""
         queue_refresh()
     elseif verb == "return" then
-        dismiss(cx, true)
+        dismiss(cx)
     elseif verb == "focus" then
         local target = targets[key]
-        if not target or not cx.session:pane(target.pane) then
+        local present = false
+        for _, pane in ipairs(cx.session:panes()) do
+            if target and pane.pane == target.pane then present = true break end
+        end
+        if not present then
             cx:toast("info", "That agent is no longer available")
             queue_refresh()
         else
-            if target.session then cx.sessions:switch(target.session)
-            elseif target.host then cx.hosts:switch(target.host) end
             if target.parked then
                 local ok, err = cx.layout:unpark(target.pane)
-                if not ok then cx:toast("error", "Could not show parked agent", err) return { handled = true } end
+                if not ok then cx:toast("error", "Could not show parked agent", err) return end
             end
-            dismiss(cx, false)
-            cx.layout:focus(target.pane)
+            local closing, owner, started = cockpitSpec, token, tern.now()
+            dismiss(cx)
+            local function after_close(current)
+                if not current or token ~= owner or cockpit then return end
+                if current.session:pane(closing) then
+                    if tern.now() - started < 2000 then tern.timer(STEP_MS, after_close)
+                    else current:toast("error", "Agent Cockpit did not close") end
+                    return
+                end
+                -- A newer user selection wins over this queued request.
+                local focused = current.session:focused()
+                if focused ~= previous and focused ~= target.pane then return end
+                navigation.focus(current, target.pane, function() return token == owner and not cockpit end, function(next_cx, ok, err)
+                    if not ok then next_cx:toast("error", "Could not focus agent", err) end
+                end)
+            end
+            tern.timer(STEP_MS, after_close)
         end
     end
+end
+
+tern.route.link(function(link, cx)
+    if link.url:sub(1, #SCHEME) ~= SCHEME then return nil end
+    local verb, owner, key = link.url:sub(#SCHEME + 1):match("^([^/]+)/([^/]+)/?(.*)$")
+    if owner == token then
+        local ok, err = pcall(handle_route, verb, key, cx)
+        if not ok then
+            tern.log.error("Agent Cockpit link action failed", verb, tostring(err))
+            cx:toast("error", "Agent Cockpit action failed", tostring(err))
+        end
+    end
+    -- A private control URL is never an external browser destination, even if
+    -- its owner closed or the requested operation failed.
     return { handled = true }
 end)
 
@@ -550,7 +586,8 @@ tern.on("pane_closed", function(event, _cx)
     workspaceCache[key] = nil
     lifecycleCache[key], doneUnseen[key], phaseSince[key] = nil, nil, nil
     if event.pane == cockpit then
-        cockpit, selected, lastSnapshot = nil, nil, ""
+        cockpit, cockpitSpec, selected, lastSnapshot = nil, nil, nil, ""
+        modalReady, focusing = false, false
         targets = {}
         pending, refreshJob, refreshAgain = nil, nil, false
     end
@@ -570,7 +607,15 @@ for _, event in ipairs({ "pane_closed", "tab_created", "tab_closed", "cwd", "com
     tern.on(event, function(_event, _cx) queue_refresh() end)
 end
 tern.on("focus", function(_event, cx)
-    if cockpit and modalReady and cx.session:focused() ~= cockpit then dismiss(cx, false) end
+    navigation.observe(cx)
+    debugFocus[#debugFocus + 1] = { event = _event.pane, focused = cx.session:focused() }
+    if #debugFocus > 12 then table.remove(debugFocus, 1) end
+    if cockpit and focusing then
+        local pane = cx.session:focused()
+        if pane ~= previous and pane ~= cockpit then dismiss(cx) end
+    elseif cockpit and modalReady and cx.session:focused() ~= cockpit then
+        dismiss(cx)
+    end
 end)
 
 local function toggle_flag(cx)
@@ -579,7 +624,7 @@ local function toggle_flag(cx)
     if cockpit and focused == cockpit and selected and targets[selected] then
         tab = targets[selected].tab
     else
-        local pane = focused and cx.session:pane(focused)
+        local pane = cx.session:pane("@focused")
         tab = pane and pane.tab
     end
     if not tab then
@@ -609,3 +654,9 @@ local function poll(cx)
     tern.timer(1000, poll)
 end
 tern.timer(1000, poll)
+tern.command({id="debug_ids",title="Inspect cockpit native identity",run=function(cx)
+    tern.fs.write("/tmp/cockpit-window-ids.json",tern.json.encode({
+        hosts=cx.hosts:list(),sessions=cx.session:sessions(),managed=cx.sessions:list(),
+        tabs=cx.session:tabs(),panes=cx.session:panes(),focus=debugFocus,
+    }))
+end})

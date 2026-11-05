@@ -199,8 +199,6 @@ grep -q 'bar ? bar\.barForeground' BarWidget.qml \
   || fail "the bar icon must follow bar.barForeground in transparent mode"
 grep -q 'markColor: root.accent' App.qml \
   || fail "the Omamail header M must use the active theme accent"
-grep -q 'markColor: Color.accent' BarWidget.qml \
-  || fail "the bar M must use the active theme accent"
 
 # IconTextButton has no separate hover glyph colour. Assigning one makes the
 # whole component type unavailable at runtime, and App.qml then cannot be

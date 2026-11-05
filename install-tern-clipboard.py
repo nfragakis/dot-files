@@ -4,11 +4,13 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import os
 from pathlib import Path
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 
 
@@ -62,7 +64,31 @@ def main() -> int:
                 subprocess.run(["git", "clone", "https://github.com/Moti-Velz/tern-forge", str(forge)], check=True)
             if not (forge / "omarchy/hypr/tern-nav.lua").is_file():
                 raise ValueError(f"{forge} exists but does not contain the Tern Omarchy integration")
-            subprocess.run(["tern", "plugin", "link", str(forge / "omarchy")], check=True)
+            entry = repo / "tern/plugins/omarchy/window.luau"
+            if not entry.is_file():
+                raise ValueError(f"Missing native Omarchy window entry: {entry}")
+            # Luau resolves relative requires from the canonical entry path.
+            # A symlinked entry outside this package therefore cannot import lib.
+            digest = hashlib.sha256(entry.read_bytes())
+            for source in sorted((forge / "omarchy").rglob("*")):
+                if source.is_file() and "__pycache__" not in source.parts:
+                    digest.update(str(source.relative_to(forge / "omarchy")).encode())
+                    digest.update(source.read_bytes())
+            package = state / "dot-files/tern-omarchy" / digest.hexdigest()[:16]
+            if not package.exists():
+                package.parent.mkdir(parents=True, exist_ok=True)
+                with tempfile.TemporaryDirectory(prefix=".staging-", dir=package.parent) as temporary:
+                    prepared = Path(temporary) / "plugin"
+                    shutil.copytree(forge / "omarchy", prepared, ignore=shutil.ignore_patterns("__pycache__", ".git"))
+                    shutil.copy2(entry, prepared / "window.luau")
+                    prepared.rename(package)
+            plugins = Path(subprocess.check_output(["tern", "plugin", "dir"], text=True).strip())
+            if not plugins.is_absolute():
+                raise ValueError("tern plugin dir did not return an absolute path")
+            pointer = plugins / "omarchy.path"
+            if pointer.is_file() and pointer.read_text().strip() != str(package):
+                backup(pointer, "tern-plugins/omarchy.path", move=False)
+            subprocess.run(["tern", "plugin", "link", str(package)], check=True)
             link(repo / "hypr/tern-omarchy.lua", config / "hypr/tern-omarchy.lua", "hypr/tern-omarchy.lua")
             lines = original.splitlines(keepends=True)
             # Replace only the superseded clipboard hooks; keep all personal bindings.
