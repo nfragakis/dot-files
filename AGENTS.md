@@ -21,6 +21,12 @@ when it is missing; that plugin is git-managed by Omarchy, not vendored here,
 and `shell.json` already places it in the bar. `./install-input.sh` installs the
 repo's Hyprland input file and system-wide `keyd` configuration.
 
+The Agents panel is stock `omarchy.agents` (Omarchy 4.5+). The installer
+backs up and removes the retired `nfragakis.agents` installation, including
+dangling links after pulling. Run it after pulling on each machine; it
+reapplies the whole repository shell layout, not just the Agents widget.
+See README.md for the migration steps.
+
 `./install-tern-clipboard.py` installs Tern's upstream Omarchy integration and
 the omp image-paste extension. `--client` clones `tern-forge` into `~/src/forge`
 if absent, links its `omarchy` plugin, and links `hypr/tern-omarchy.lua` into

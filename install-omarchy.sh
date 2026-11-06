@@ -45,6 +45,13 @@ link_path() {
   printf 'Linked %s -> %s\n' "$target" "$source"
 }
 
+# Retired clone: stock omarchy.agents now owns the panel and its collectors.
+# Include dangling links left behind when git pull removes the clone.
+retired_panel="$target_root/plugins/nfragakis.agents"
+if [[ -e "$retired_panel" || -L "$retired_panel" ]]; then
+  backup_target "$retired_panel"
+fi
+
 for plugin_path in "$source_root"/plugins/*; do
   [[ -d "$plugin_path" ]] || continue
   plugin="$(basename -- "$plugin_path")"

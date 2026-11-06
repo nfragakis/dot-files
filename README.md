@@ -32,6 +32,31 @@ It is safe to run repeatedly. A conflicting file, directory, or link is moved
 to `~/.local/state/dot-files/backups/omarchy/<timestamp>` before the repo path
 is linked. Other user plugins and Omarchy configuration are left in place.
 
+### Stock Agents panel (Omarchy 4.5+)
+
+The bar uses the packaged `omarchy.agents` panel. The former
+`nfragakis.agents` clone, its collector overrides, and their tests were removed.
+The installer moves any old clone directory or symlink (including a dangling
+link after pulling) into its backup directory instead of leaving it installed.
+Provider credentials, usage history, and the separate Grok, OpenCode Go, and
+Z.AI services are unchanged.
+
+On each other machine, first update Omarchy to 4.5 or newer, then run:
+
+```bash
+cd ~/Work/personal/dot-files
+git pull --ff-only
+./install-omarchy.sh
+omarchy-shell omarchy.agents open
+```
+
+Commit or stash local repository edits before pulling if Git reports a
+conflict; do not discard them. The installer reapplies the repository's
+**whole shell layout**, backing up a detached machine-local `shell.json`.
+Save any machine-specific layout choices you want to merge afterward.
+Pulling alone is insufficient: shell UI changes can detach the config symlink,
+and the installer removes the retired plugin link and rescans the shell.
+
 ### Coding-agent workspace marks
 
 The workspace widget can show a green dot when a Codex or Claude Code turn is

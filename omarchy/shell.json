@@ -54,8 +54,7 @@
           "id": "omarchy.tailscale"
         },
         {
-          "id": "nfragakis.agents",
-          "usageWindowDays": 7,
+          "id": "omarchy.agents",
           "providers": {
             "agy": { "enabled": false },
             "grok": { "enabled": false },
