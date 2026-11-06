@@ -15,7 +15,16 @@
           "lifeExpectancy": 90
         },
         {
-          "id": "omarchy.elsewhen"
+          "id": "omarchy.elsewhen",
+          "cities": [
+            {
+              "name": "Nashville",
+              "zone": "America/Chicago",
+              "lat": 36.16589,
+              "lon": -86.78444,
+              "region": "Tennessee, US"
+            }
+          ]
         },
         {
           "id": "omarchy.keyboard-layout"
@@ -56,11 +65,21 @@
         {
           "id": "omarchy.agents",
           "providers": {
-            "agy": { "enabled": false },
-            "grok": { "enabled": false },
-            "minimax": { "enabled": false },
-            "opencode": { "enabled": false },
-            "zai": { "enabled": false }
+            "agy": {
+              "enabled": false
+            },
+            "grok": {
+              "enabled": false
+            },
+            "minimax": {
+              "enabled": false
+            },
+            "opencode": {
+              "enabled": false
+            },
+            "zai": {
+              "enabled": false
+            }
           }
         },
         {
